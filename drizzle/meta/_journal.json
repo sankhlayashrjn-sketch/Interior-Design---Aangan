@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1791523607919,
+      "tag": "0000_flawless_the_fallen",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1791525829650,
+      "tag": "0001_legal_power_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791526316915,
+      "tag": "0002_supreme_zarda",
+      "breakpoints": true
+    }
+  ]
+}

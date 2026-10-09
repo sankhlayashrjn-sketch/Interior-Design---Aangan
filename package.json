@@ -1,0 +1,52 @@
+{
+  "name": "aangan-enquiry-desk",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:seed": "tsx scripts/seed.ts",
+    "db:reset": "tsx scripts/reset.ts",
+    "hubspot:reports": "tsx scripts/hubspot-reports.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "telegram:link": "tsx scripts/telegram-link.ts",
+    "telegram:webhook": "tsx scripts/telegram-webhook.ts",
+    "telegram:poll": "tsx scripts/telegram-poll.ts",
+    "hubspot:check": "tsx scripts/hubspot-check.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.132.1",
+    "@fontsource/inter": "^5.3.0",
+    "better-sqlite3": "^13.0.3",
+    "drizzle-orm": "^0.45.4",
+    "luxon": "^3.7.2",
+    "next": "^16.4.0",
+    "node-cron": "^4.6.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/luxon": "^3.7.6",
+    "@types/node": "^26.6.4",
+    "@types/node-cron": "^3.0.11",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "drizzle-kit": "^0.31.11",
+    "postcss": "^8.5.29",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  },
+  "description": "Enquiry desk for Aangan Studio: handles incoming phone calls from a voice agent through scoring, designer handoff, reminders and HubSpot.",
+  "engines": {
+    "node": ">=20.12"
+  }
+}
