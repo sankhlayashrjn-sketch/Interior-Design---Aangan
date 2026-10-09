@@ -16,7 +16,13 @@
     "telegram:webhook": "tsx scripts/telegram-webhook.ts",
     "hubspot:check": "tsx scripts/hubspot-check.ts",
     "vercel-build": "tsx scripts/migrate.ts && next build",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "db:check": "tsx scripts/db-check.ts",
+    "db:check:neon": "tsx --env-file=.env.neon scripts/db-check.ts",
+    "db:migrate:neon": "tsx --env-file=.env.neon scripts/migrate.ts",
+    "dev:neon": "node --env-file=.env.neon node_modules/next/dist/bin/next dev",
+    "smoke": "tsx scripts/smoke.ts",
+    "smoke:neon": "tsx --env-file=.env.neon scripts/smoke.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.132.1",

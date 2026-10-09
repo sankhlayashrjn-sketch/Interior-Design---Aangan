@@ -1,6 +1,8 @@
 # Deploying to Vercel and Neon
 
-How the app runs there, and the steps to put it online. Nothing in this guide has been run against a real Vercel or Neon account yet; the code is tested against an in-process Postgres (PGlite) with the same SQL. Do the first deployment on a throwaway project.
+How the app runs there, and the steps to put it online.
+
+**Neon is set up and verified.** The schema has been applied to your Neon project (`round-butterfly-73023080`, branch `production`, region us-east-2), and an end-to-end smoke test passed there (see "Checking the database"). **Vercel has not been tried yet**, so do the first deployment carefully and check it with the commands in step 4.
 
 ## How it works on Vercel
 
@@ -24,8 +26,13 @@ HubSpot updates triggered by a click or a call are sent through Next's `after()`
 
 ## 1. Neon
 
-1. In the Neon console open your project and, on the **Connection details** panel, tick **Pooled connection**. Copy the string. It looks like `postgresql://user:password@ep-xxxx-pooler.region.aws.neon.tech/neondb?sslmode=require`. The `-pooler` in the host is what you want on Vercel.
-2. Make a second branch (for example `preview`) and copy its pooled string too. You will use it for Vercel's Preview deployments, because **each deployment runs the migrations** and previews must never migrate your production data.
+**Already done:** the tables exist on the `production` branch. Your connection strings are saved in the git-ignored file `.env.neon` in the project folder (`DATABASE_URL` is the pooled string, `DATABASE_URL_UNPOOLED` the direct one). Open that file and copy the two values into Vercel; they are not in the repository and not in this guide.
+
+- Use the **pooled** string (the host contains `-pooler`) as `DATABASE_URL` on Vercel.
+- Optionally add the **direct** string as `DATABASE_URL_UNPOOLED`. The build step uses it for migrations, as Neon recommends.
+- Neon's free plan allows several branches. If you want Vercel Preview deployments, give them their own branch and string, because **each deployment runs the migrations** and previews must never migrate your production data.
+
+Your Neon project is in **us-east-2** (Ohio). `vercel.json` pins the functions to `iad1` (Washington DC), the closest Vercel region, so the app and its database are a few milliseconds apart. From your own laptop in India each query takes a few hundred milliseconds, which is why local development uses the local database.
 
 ## 2. Vercel project
 
@@ -58,6 +65,18 @@ HubSpot updates triggered by a click or a call are sent through Next's `after()`
 4. **HubSpot:** run `npm run hubspot:check` locally with the same token. When the scopes show OK, the next tick creates the properties and the "Phone Enquiries" pipeline.
 5. **Vaani:** send calls to `POST https://<project>.vercel.app/api/calls` with header `x-api-key: <INGEST_API_KEY>`.
 
+## Checking the database
+
+From the project folder, with `.env.neon` present:
+
+```bash
+npm run db:check:neon      # connects, lists the tables, proves a write, read, delete and lock work, never prints the string
+npm run smoke:neon         # runs the app's real code (scoring, assignment, reminders, founder numbers) against Neon, then removes its own rows
+npm run dev:neon           # runs the whole app against Neon (slow from India, and writes real data)
+```
+
+The smoke test forces every integration to mock, and **refuses to run on a database that already has calls or designers**, so it can never touch real data. The same two commands work on any database: `npm run db:check` and `npm run smoke` use the local one.
+
 ## 4. Check it is alive
 
 ```bash
@@ -87,5 +106,5 @@ Vercel rejects a per-minute cron on Hobby and the deployment fails with a messag
 
 ## Not yet verified
 
-- A real Neon connection (the pooled string with the `pg` driver) and a real Vercel deployment. The SQL and the concurrency rules are tested on PGlite, which is a real Postgres engine.
+- A real Vercel deployment: the build, the cron, and the function region. (Neon itself is verified: see "Checking the database".)
 - That Vercel sends `CRON_SECRET` as `Authorization: Bearer ...` exactly as the code expects (this is how Vercel documents it, but confirm on the first run: a 401 in the Cron tab means the secret is not matching).

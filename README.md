@@ -38,6 +38,8 @@ Other commands:
 |---|---|
 | `npm test` | Runs the test suite |
 | `npm run typecheck` | TypeScript check |
+| `npm run db:check` / `db:check:neon` | Checks the database connection (local, or the Neon one in `.env.neon`) |
+| `npm run smoke` / `smoke:neon` | End-to-end run of the real code against that database, with everything mocked, cleaning up afterwards |
 | `npm run db:reset` | Deletes the local database (then run `db:migrate` and `db:seed`) |
 | `npx tsx scripts/calibration.ts` | Prints how the 20 sample calls score under the rubric |
 | `npm run telegram:link -- <designerId>` | Makes a one-time Telegram link for a designer |
@@ -264,7 +266,7 @@ Stack: Next.js 16 (App Router), TypeScript, Tailwind 4, Postgres through Drizzle
 - The Vaani adapter is a stub (by design).
 - No fallback that creates a Cal.com booking after the call if the voice agent cannot book mid-call. The `POST /api/bookings` webhook already links a booking that arrives after the call, so a booking created by the app later could be fed through the same function (`applyCalEvent` in `src/lib/bookings.ts`).
 - Login is a single shared password, not per-person accounts.
-- The Neon/`pg` path has been tested only against PGlite (a real Postgres engine, so the SQL is the same), not yet against a live Neon database.
+- A real Vercel deployment has not been tried yet. The Neon database is set up and verified (`npm run db:check:neon`, `npm run smoke:neon`).
 - WhatsApp and the web form are documented, not built.
 - Three settings columns (`min_commercial_sqft`, `max_commercial_sqft`, `min_lead_weeks`) exist in the database but nothing reads them. The size limits live in `context/services.md` and `prompts/rubric.md`.
 - `npm audit` reports 4 moderate findings, all from an old `esbuild` bundled inside `drizzle-kit`, a development-only tool that generates migrations and never serves anything. Left alone because the suggested fix downgrades `drizzle-kit` to a much older version.
