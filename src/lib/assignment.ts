@@ -1,5 +1,6 @@
-import { asc, eq } from "drizzle-orm";
-import { db, schema } from "@/db";
+import { asc, eq, sql } from "drizzle-orm";
+import { db, one, schema } from "@/db";
+import { getSettings } from "@/lib/settings";
 
 export interface AssignmentContext {
   callId: number;
@@ -9,31 +10,36 @@ export interface AssignmentContext {
   escalate: boolean;
 }
 
-/** Return the designer id to assign, or null if nobody is available. Must be synchronous and side-effect free apart from its own bookkeeping. */
-export type Assigner = (ctx: AssignmentContext) => number | null;
+/** Return the designer id to assign, or null if nobody is available. */
+export type Assigner = (ctx: AssignmentContext) => Promise<number | null> | number | null;
 
-/** Round-robin over active, non-escalation designers in rr_order. The pointer lives in settings so it survives restarts. */
-export const roundRobin: Assigner = () => {
-  const pool = db
+/**
+ * Round-robin over active, non-escalation designers in rr_order. The pointer lives in settings and is
+ * advanced with one atomic UPDATE, so two calls arriving at the same moment on different servers never get the same slot.
+ */
+export const roundRobin: Assigner = async () => {
+  const designers = await db
     .select()
     .from(schema.designers)
     .where(eq(schema.designers.active, true))
-    .orderBy(asc(schema.designers.rrOrder), asc(schema.designers.id))
-    .all()
-    .filter((d) => !d.isEscalation);
+    .orderBy(asc(schema.designers.rrOrder), asc(schema.designers.id));
+  const pool = designers.filter((d) => !d.isEscalation);
   if (pool.length === 0) return null;
-  const s = db.select().from(schema.settings).where(eq(schema.settings.id, 1)).get();
-  const pointer = s?.rrPointer ?? 0;
-  const pick = pool[pointer % pool.length];
-  db.update(schema.settings).set({ rrPointer: (pointer + 1) % pool.length }).where(eq(schema.settings.id, 1)).run();
-  return pick.id;
+  await getSettings(); // makes sure the row exists
+  const [row] = await db
+    .update(schema.settings)
+    .set({ rrPointer: sql`(${schema.settings.rrPointer} + 1) % ${pool.length}` })
+    .where(eq(schema.settings.id, 1))
+    .returning({ pointer: schema.settings.rrPointer });
+  const before = (row.pointer - 1 + pool.length) % pool.length; // the slot this call takes
+  return pool[before].id;
 };
 
 /** Default strategy: booking host, then escalation designer for complaints, then round-robin. */
-export const defaultAssigner: Assigner = (ctx) => {
+export const defaultAssigner: Assigner = async (ctx) => {
   if (ctx.bookingHostDesignerId) return ctx.bookingHostDesignerId;
   if (ctx.escalate) {
-    const head = db.select().from(schema.designers).where(eq(schema.designers.isEscalation, true)).get();
+    const head = await one(db.select().from(schema.designers).where(eq(schema.designers.isEscalation, true)));
     if (head) return head.id;
   }
   return roundRobin(ctx);
@@ -46,6 +52,6 @@ export function setAssigner(fn: Assigner) {
   current = fn;
 }
 
-export function assignDesigner(ctx: AssignmentContext): number | null {
+export async function assignDesigner(ctx: AssignmentContext): Promise<number | null> {
   return current(ctx);
 }

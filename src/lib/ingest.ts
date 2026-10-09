@@ -1,7 +1,7 @@
 import "@/lib/runtime";
-import { and, desc, eq, gte, isNull, lt } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lt, or } from "drizzle-orm";
 import { z } from "zod";
-import { db, schema } from "@/db";
+import { db, one, schema } from "@/db";
 import type { CallFlag } from "@/db/schema";
 import { scoreTranscript, type AiOutput } from "@/lib/ai";
 import { assignDesigner } from "@/lib/assignment";
@@ -38,7 +38,11 @@ export interface IngestResult {
   call: Call;
 }
 
-const getCall = (id: number) => db.select().from(schema.calls).where(eq(schema.calls.id, id)).get()!;
+const getCall = async (id: number) => (await one(db.select().from(schema.calls).where(eq(schema.calls.id, id))))!;
+const findByExternalId = (externalId: string) => one(db.select().from(schema.calls).where(eq(schema.calls.externalId, externalId)));
+
+/** A worker that claimed a call and then died is considered gone after this long, and another worker may take over. */
+const CLAIM_TIMEOUT_MS = 5 * 60_000;
 
 /**
  * Save a call as "yet_to_be_processed" and (by default) process it straight away.
@@ -47,7 +51,7 @@ const getCall = (id: number) => db.select().from(schema.calls).where(eq(schema.c
 export async function ingestCall(raw: unknown, opts: { process?: boolean } = {}): Promise<IngestResult> {
   const payload = IngestPayloadSchema.parse(raw);
 
-  const existing = db.select().from(schema.calls).where(eq(schema.calls.externalId, payload.external_id)).get();
+  const existing = await findByExternalId(payload.external_id);
   if (existing) return { outcome: "duplicate", call: existing };
 
   const startedAt = new Date(payload.started_at);
@@ -56,40 +60,37 @@ export async function ingestCall(raw: unknown, opts: { process?: boolean } = {})
   // A redial shortly after a very short call is the same enquiry.
   let linkedCallId: number | null = null;
   if (phone) {
-    const prev = db
-      .select()
-      .from(schema.calls)
-      .where(and(eq(schema.calls.callerPhone, phone), gte(schema.calls.startedAt, new Date(startedAt.getTime() - 15 * 60_000)), lt(schema.calls.startedAt, startedAt)))
-      .orderBy(desc(schema.calls.startedAt))
-      .get();
+    const prev = await one(
+      db
+        .select()
+        .from(schema.calls)
+        .where(and(eq(schema.calls.callerPhone, phone), gte(schema.calls.startedAt, new Date(startedAt.getTime() - 15 * 60_000)), lt(schema.calls.startedAt, startedAt)))
+        .orderBy(desc(schema.calls.startedAt))
+        .limit(1),
+    );
     if (prev && prev.durationSec < 120) linkedCallId = prev.id;
   }
 
-  let call: Call;
-  try {
-    call = db
-      .insert(schema.calls)
-      .values({
-        externalId: payload.external_id,
-        callerPhone: phone,
-        startedAt,
-        durationSec: payload.duration_sec,
-        transcript: payload.transcript,
-        rawPayload: raw as object,
-        receivedAt: new Date(),
-        status: "yet_to_be_processed",
-        linkedCallId,
-      })
-      .returning()
-      .get();
-  } catch (e) {
-    // Two identical requests racing: the unique index on external_id decides.
-    const again = db.select().from(schema.calls).where(eq(schema.calls.externalId, payload.external_id)).get();
-    if (again) return { outcome: "duplicate", call: again };
-    throw e;
-  }
+  // The unique index on external_id decides if two identical requests race: the loser inserts nothing.
+  const inserted = await db
+    .insert(schema.calls)
+    .values({
+      externalId: payload.external_id,
+      callerPhone: phone,
+      startedAt,
+      durationSec: payload.duration_sec,
+      transcript: payload.transcript,
+      rawPayload: raw as object,
+      receivedAt: new Date(),
+      status: "yet_to_be_processed",
+      linkedCallId,
+    })
+    .onConflictDoNothing({ target: schema.calls.externalId })
+    .returning();
+  if (inserted.length === 0) return { outcome: "duplicate", call: (await findByExternalId(payload.external_id))! };
+  let call = inserted[0];
 
-  attachBookingFromPayload(call, payload);
+  await attachBookingFromPayload(call, payload);
   await emit("call.received", { callId: call.id });
 
   if (opts.process !== false) {
@@ -97,42 +98,45 @@ export async function ingestCall(raw: unknown, opts: { process?: boolean } = {})
       call = await processCall(call.id);
     } catch (e) {
       // Stays "yet_to_be_processed" and is picked up by processPending().
-      audit("process.error", { error: e instanceof Error ? e.message : String(e) }, call.id);
-      call = getCall(call.id);
+      await audit("process.error", { error: e instanceof Error ? e.message : String(e) }, call.id);
+      call = await getCall(call.id);
     }
   }
   return { outcome: "created", call };
 }
 
 /** Link a booking given on the ingest payload, or one the Cal.com webhook delivered earlier. */
-function attachBookingFromPayload(call: Call, payload: IngestPayload) {
+async function attachBookingFromPayload(call: Call, payload: IngestPayload) {
   const now = new Date();
-  let booking = payload.booking_id ? db.select().from(schema.bookings).where(eq(schema.bookings.calcomUid, payload.booking_id)).get() : undefined;
+  let booking = payload.booking_id ? await one(db.select().from(schema.bookings).where(eq(schema.bookings.calcomUid, payload.booking_id))) : undefined;
 
   if (!booking && call.callerPhone) {
-    booking = db
-      .select()
-      .from(schema.bookings)
-      .where(and(isNull(schema.bookings.callId), eq(schema.bookings.attendeePhone, call.callerPhone)))
-      .orderBy(desc(schema.bookings.createdAt))
-      .get();
+    booking = await one(
+      db
+        .select()
+        .from(schema.bookings)
+        .where(and(isNull(schema.bookings.callId), eq(schema.bookings.attendeePhone, call.callerPhone)))
+        .orderBy(desc(schema.bookings.createdAt))
+        .limit(1),
+    );
   }
 
   if (!booking && payload.booked_slot) {
     const uid = payload.booking_id ?? `mock-${payload.external_id}`;
-    booking = db
-      .insert(schema.bookings)
-      .values({ calcomUid: uid, callId: call.id, startTime: new Date(payload.booked_slot), status: "booked", attendeePhone: call.callerPhone, createdAt: now, updatedAt: now })
-      .returning()
-      .get();
+    booking = await one(
+      db
+        .insert(schema.bookings)
+        .values({ calcomUid: uid, callId: call.id, startTime: new Date(payload.booked_slot), status: "booked", attendeePhone: call.callerPhone, createdAt: now, updatedAt: now })
+        .returning(),
+    );
   }
   if (!booking) return;
 
-  db.update(schema.bookings).set({ callId: call.id, updatedAt: now }).where(eq(schema.bookings.id, booking.id)).run();
-  db.update(schema.calls)
+  await db.update(schema.bookings).set({ callId: call.id, updatedAt: now }).where(eq(schema.bookings.id, booking.id));
+  await db
+    .update(schema.calls)
     .set({ bookingId: booking.calcomUid, bookedSlot: booking.startTime, bookingStatus: booking.status })
-    .where(eq(schema.calls.id, call.id))
-    .run();
+    .where(eq(schema.calls.id, call.id));
 }
 
 const FLAG_ORDER: CallFlag[] = ["existing_client", "no_transcript", "upset_caller"];
@@ -166,32 +170,52 @@ function rubricInputFor(call: Call, o: AiOutput): RubricInput {
   };
 }
 
-/** Everything derived from the model output + booking state. Pure, so it can be rerun when a booking changes. */
-function outcomeFor(call: Call, o: AiOutput) {
+/** Everything derived from the model output + booking state. Rerun when a booking changes. */
+async function outcomeFor(call: Call, o: AiOutput) {
   const result = finalizeScore(rubricInputFor(call, o));
   const guarded = guardFields({ summary: o.summary, reason: result.reason, already_asked: o.already_asked, suggested_next_step: o.suggested_next_step }, call.transcript);
   const hits = [...guarded.hits];
   for (const p of agentQuotedPrices(call.transcript)) hits.push(`agent quoted a price on the call: ${p}`);
-  if (hits.length) audit("guardrail.price_flagged", { hits }, call.id);
-  for (const n of result.notes) audit("rubric.note", { note: n }, call.id);
+  if (hits.length) await audit("guardrail.price_flagged", { hits }, call.id);
+  for (const n of result.notes) await audit("rubric.note", { note: n }, call.id);
   return { result, guarded: guarded.fields, hits };
 }
 
-/** Run the AI on a saved call, assign a designer, compute the SLA and write cost. */
+/**
+ * Run the AI on a saved call, assign a designer, compute the SLA and write cost.
+ * Safe to call from several servers at once: the call is claimed first, so it is processed exactly once.
+ */
 export async function processCall(callId: number): Promise<Call> {
-  const call = getCall(callId);
-  if (call.processedAt) return call;
+  const claimed = await db
+    .update(schema.calls)
+    .set({ processingStartedAt: new Date() })
+    .where(
+      and(
+        eq(schema.calls.id, callId),
+        isNull(schema.calls.processedAt),
+        or(isNull(schema.calls.processingStartedAt), lt(schema.calls.processingStartedAt, new Date(Date.now() - CLAIM_TIMEOUT_MS))),
+      ),
+    )
+    .returning();
+  if (claimed.length === 0) return getCall(callId); // already processed, or another worker has it
 
-  const settings = getSettings();
+  const call = claimed[0];
+  const settings = await getSettings();
   const hours = hoursConfig(settings);
   const hasBooking = !!call.bookedSlot && call.bookingStatus !== "cancelled";
 
-  const scored = await scoreTranscript(
-    { transcript: call.transcript, startedAt: call.startedAt, durationSec: call.durationSec, hasPhone: !!call.callerPhone, bookedSlot: hasBooking ? call.bookedSlot : null },
-    settings.aiModel || env.ANTHROPIC_MODEL,
-  );
+  let scored;
+  try {
+    scored = await scoreTranscript(
+      { transcript: call.transcript, startedAt: call.startedAt, durationSec: call.durationSec, hasPhone: !!call.callerPhone, bookedSlot: hasBooking ? call.bookedSlot : null },
+      settings.aiModel || env.ANTHROPIC_MODEL,
+    );
+  } catch (e) {
+    await db.update(schema.calls).set({ processingStartedAt: null }).where(eq(schema.calls.id, callId)); // release the claim so it can be retried
+    throw e;
+  }
 
-  const bookingRow = call.bookingId ? db.select().from(schema.bookings).where(eq(schema.bookings.calcomUid, call.bookingId)).get() : undefined;
+  const bookingRow = call.bookingId ? await one(db.select().from(schema.bookings).where(eq(schema.bookings.calcomUid, call.bookingId))) : undefined;
   const plan = planReminder(call.startedAt, settings.slaMinutes, hours);
   const o = scored.output;
 
@@ -199,7 +223,7 @@ export async function processCall(callId: number): Promise<Call> {
   let escalate = false;
 
   if (o) {
-    const { result, guarded, hits } = outcomeFor(call, o);
+    const { result, guarded, hits } = await outcomeFor(call, o);
     escalate = o.existing_client;
     Object.assign(update, {
       status: result.status,
@@ -223,7 +247,7 @@ export async function processCall(callId: number): Promise<Call> {
     if (result.status !== "qualified" && !update.reason) update.reason = "Review needed";
   } else {
     // AI failed twice. Never guess: park it for a human.
-    audit("ai.failed", { error: scored.error }, call.id);
+    await audit("ai.failed", { error: scored.error }, call.id);
     Object.assign(update, {
       status: "needs_attention",
       flag: "ai_failed",
@@ -235,12 +259,13 @@ export async function processCall(callId: number): Promise<Call> {
     });
   }
 
-  update.assignedDesignerId = assignDesigner({ callId, bookingHostDesignerId: bookingRow?.hostDesignerId ?? null, escalate });
+  update.assignedDesignerId = await assignDesigner({ callId, bookingHostDesignerId: bookingRow?.hostDesignerId ?? null, escalate });
 
-  db.transaction((tx) => {
-    tx.update(schema.calls).set(update).where(eq(schema.calls.id, callId)).run();
+  await db.transaction(async (tx) => {
+    await tx.update(schema.calls).set(update).where(eq(schema.calls.id, callId));
     const tel = telephonyCost(call.durationSec);
-    tx.insert(schema.callsCost)
+    await tx
+      .insert(schema.callsCost)
       .values({
         callId,
         model: scored.model,
@@ -251,13 +276,12 @@ export async function processCall(callId: number): Promise<Call> {
         telephonyCostInr: tel.costInr,
         createdAt: new Date(),
       })
-      .onConflictDoNothing()
-      .run();
+      .onConflictDoNothing();
   });
 
   // Mock Cal.com: the "host" of a simulated booking is whoever the round-robin picked.
   if (env.CALCOM_MODE === "mock" && bookingRow && !bookingRow.hostDesignerId && update.assignedDesignerId) {
-    db.update(schema.bookings).set({ hostDesignerId: update.assignedDesignerId }).where(eq(schema.bookings.id, bookingRow.id)).run();
+    await db.update(schema.bookings).set({ hostDesignerId: update.assignedDesignerId }).where(eq(schema.bookings.id, bookingRow.id));
   }
 
   await emit("call.processed", { callId });
@@ -266,12 +290,12 @@ export async function processCall(callId: number): Promise<Call> {
 
 /** Process anything still "yet_to_be_processed" (for example after a crash). */
 export async function processPending(): Promise<number> {
-  const rows = db.select().from(schema.calls).where(and(eq(schema.calls.status, "yet_to_be_processed"), isNull(schema.calls.processedAt))).all();
+  const rows = await db.select().from(schema.calls).where(and(eq(schema.calls.status, "yet_to_be_processed"), isNull(schema.calls.processedAt)));
   for (const r of rows) {
     try {
       await processCall(r.id);
     } catch (e) {
-      audit("process.error", { error: e instanceof Error ? e.message : String(e) }, r.id);
+      await audit("process.error", { error: e instanceof Error ? e.message : String(e) }, r.id);
     }
   }
   return rows.length;
@@ -282,18 +306,18 @@ export async function processPending(): Promise<number> {
  * qualifies a call by itself: it only changes the next-step points. If a designer has overridden the status,
  * it is left alone.
  */
-export function rescoreCall(callId: number) {
-  const call = getCall(callId);
+export async function rescoreCall(callId: number) {
+  const call = await getCall(callId);
   const o = call.aiOutput as AiOutput | null;
   if (!o || !call.processedAt) return call;
-  const { result, guarded, hits } = outcomeFor(call, o);
-  const overridden = !!db.select().from(schema.statusOverrides).where(eq(schema.statusOverrides.callId, callId)).get();
+  const { result, guarded, hits } = await outcomeFor(call, o);
+  const overridden = !!(await one(db.select().from(schema.statusOverrides).where(eq(schema.statusOverrides.callId, callId)).limit(1)));
   const patch: Partial<Call> = { score: result.score, scoreBreakdown: result.breakdown, guardrailHits: hits.length ? hits : null };
   if (!overridden) {
     patch.status = result.status;
     patch.reason = result.reason;
     patch.suggestedNextStep = guarded.suggested_next_step;
   }
-  db.update(schema.calls).set(patch).where(eq(schema.calls.id, callId)).run();
+  await db.update(schema.calls).set(patch).where(eq(schema.calls.id, callId));
   return getCall(callId);
 }

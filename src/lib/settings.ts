@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { db, schema } from "@/db";
+import { db, one, schema } from "@/db";
 import { env } from "@/lib/env";
 import { emit } from "@/lib/hooks";
 import type { WorkingHoursConfig } from "@/lib/working-hours";
@@ -8,15 +8,17 @@ import { IST } from "@/lib/working-hours";
 
 export type Settings = typeof schema.settings.$inferSelect;
 
+const readSettings = () => one(db.select().from(schema.settings).where(eq(schema.settings.id, 1)));
+
 /** Returns the single settings row, creating it with defaults if missing. */
-export function getSettings(): Settings {
-  const row = db.select().from(schema.settings).where(eq(schema.settings.id, 1)).get();
+export async function getSettings(): Promise<Settings> {
+  const row = await readSettings();
   if (row) return row;
-  db.insert(schema.settings).values({ id: 1, aiModel: env.ANTHROPIC_MODEL }).run();
-  return db.select().from(schema.settings).where(eq(schema.settings.id, 1)).get()!;
+  await db.insert(schema.settings).values({ id: 1, aiModel: env.ANTHROPIC_MODEL }).onConflictDoNothing();
+  return (await readSettings())!;
 }
 
-export function hoursConfig(s: Settings = getSettings()): WorkingHoursConfig {
+export function hoursConfig(s: Settings): WorkingHoursConfig {
   return {
     workStart: s.workStart,
     workEnd: s.workEnd,
@@ -24,6 +26,11 @@ export function hoursConfig(s: Settings = getSettings()): WorkingHoursConfig {
     holidays: s.holidays,
     timezone: IST,
   };
+}
+
+/** Working-hours configuration from the saved settings. */
+export async function loadHours(): Promise<WorkingHoursConfig> {
+  return hoursConfig(await getSettings());
 }
 
 const hm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:MM, 24-hour");
@@ -51,12 +58,12 @@ const SCHEDULE_KEYS = ["workStart", "workEnd", "workDays", "holidays", "slaMinut
  */
 export async function saveSettings(patch: unknown): Promise<Settings> {
   const p = SettingsPatchSchema.parse(patch);
-  const before = getSettings();
+  const before = await getSettings();
   const next = { ...before, ...p };
   if (next.workStart >= next.workEnd) throw new Error("Working hours must start before they end");
   if (next.minCommercialSqft > next.maxCommercialSqft) throw new Error("Minimum commercial size cannot exceed the maximum");
-  db.update(schema.settings).set(p).where(eq(schema.settings.id, 1)).run();
-  const after = getSettings();
+  await db.update(schema.settings).set(p).where(eq(schema.settings.id, 1));
+  const after = await getSettings();
   if (SCHEDULE_KEYS.some((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]))) await emit("settings.changed", {});
   return after;
 }

@@ -6,9 +6,9 @@ import { getSettings } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
-export default function SettingsPage() {
-  const s = getSettings();
-  const designers = db.select().from(schema.designers).orderBy(asc(schema.designers.rrOrder), asc(schema.designers.id)).all();
+export default async function SettingsPage() {
+  const s = await getSettings();
+  const designers = await db.select().from(schema.designers).orderBy(asc(schema.designers.rrOrder), asc(schema.designers.id));
 
   const integrations = integrationStatus(); // whether a key is set, never its value
 

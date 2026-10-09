@@ -5,14 +5,26 @@ import "./globals.css";
 import { Nav } from "@/components/Nav";
 import { DesignerSelect } from "@/components/DesignerSelect";
 import { activeDesigners } from "@/lib/calls";
-import { currentDesigner } from "@/lib/session";
+import { logoutAction } from "@/app/login/actions";
+import { authMode } from "@/lib/auth";
+import { currentDesigner, signedIn } from "@/lib/session";
 
 export const metadata = { title: "Aangan Enquiry Desk" };
 export const dynamic = "force-dynamic";
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
+  // Signed-out visitors get the sign-in box and nothing else: no navigation, no designer names, no data.
+  if (!(await signedIn())) {
+    return (
+      <html lang="en">
+        <body>
+          <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">{children}</main>
+        </body>
+      </html>
+    );
+  }
   const me = await currentDesigner();
-  const designers = activeDesigners().map((d) => ({ id: d.id, name: d.name }));
+  const designers = (await activeDesigners()).map((d) => ({ id: d.id, name: d.name }));
   return (
     <html lang="en">
       <body>
@@ -22,7 +34,16 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
               <span className="font-medium">Aangan Enquiry Desk</span>
               <Nav />
             </div>
-            <DesignerSelect designers={designers} currentId={me?.id ?? null} />
+            <div className="flex items-center gap-4">
+              <DesignerSelect designers={designers} currentId={me?.id ?? null} />
+              {authMode() === "password" && (
+                <form action={logoutAction}>
+                  <button type="submit" className="text-small text-mute hover:text-ink">
+                    Sign out
+                  </button>
+                </form>
+              )}
+            </div>
           </div>
         </header>
         <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">{children}</main>

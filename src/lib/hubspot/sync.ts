@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { DateTime } from "luxon";
 import { and, eq, isNotNull, notInArray } from "drizzle-orm";
-import { db, schema } from "@/db";
+import { db, one, schema, withLease } from "@/db";
 import type { CallStatus } from "@/db/schema";
 import { audit } from "@/lib/audit";
+import { background } from "@/lib/background";
 import { on } from "@/lib/hooks";
 import { deepLink } from "@/lib/telegram";
 import { IST } from "@/lib/working-hours";
@@ -16,7 +17,6 @@ const g = globalThis as {
   __hsMeta?: { api: HubSpotApi; meta: Meta };
   __hsLocks?: Map<number, Promise<unknown>>;
   __hsAutoPush?: boolean;
-  __hsCycle?: boolean;
   __hsLastCycleError?: string;
 };
 
@@ -25,17 +25,17 @@ export function setAutoPush(enabled: boolean) {
   g.__hsAutoPush = enabled;
 }
 
-const getCall = (id: number) => db.select().from(schema.calls).where(eq(schema.calls.id, id)).get();
-const designerById = (id: number | null) => (id ? db.select().from(schema.designers).where(eq(schema.designers.id, id)).get() : undefined);
-const designerByOwner = (ownerId: string | null | undefined) => (ownerId ? db.select().from(schema.designers).where(eq(schema.designers.hubspotOwnerId, ownerId)).get() : undefined);
-const syncRow = (callId: number) => db.select().from(schema.hubspotSync).where(eq(schema.hubspotSync.callId, callId)).get();
+const getCall = (id: number) => one(db.select().from(schema.calls).where(eq(schema.calls.id, id)));
+const designerById = async (id: number | null) => (id ? one(db.select().from(schema.designers).where(eq(schema.designers.id, id))) : undefined);
+const designerByOwner = async (ownerId: string | null | undefined) => (ownerId ? one(db.select().from(schema.designers).where(eq(schema.designers.hubspotOwnerId, ownerId)).limit(1)) : undefined);
+const syncRow = (callId: number) => one(db.select().from(schema.hubspotSync).where(eq(schema.hubspotSync.callId, callId)));
 
 async function metaFor(api: HubSpotApi): Promise<Meta> {
   if (g.__hsMeta?.api !== api) g.__hsMeta = { api, meta: await api.ensureSetup() };
   return g.__hsMeta.meta;
 }
 
-/** One sync at a time per call, so "received" and "processed" can never create two deals. */
+/** One sync at a time per call inside this process, so "received" and "processed" can never create two deals. Other servers are kept out by a lease (see syncCall). */
 async function withLock<T>(callId: number, fn: () => Promise<T>): Promise<T> {
   const locks = (g.__hsLocks ??= new Map());
   const prev = locks.get(callId) ?? Promise.resolve();
@@ -49,11 +49,11 @@ async function withLock<T>(callId: number, fn: () => Promise<T>): Promise<T> {
 }
 
 /** Queue a call for pushing. `force` also forgets the last pushed state, so it is re-sent even though the app's own data did not change (HubSpot drifted from the app). */
-export function markDirty(callId: number, force = false) {
-  db.insert(schema.hubspotSync)
+export async function markDirty(callId: number, force = false): Promise<void> {
+  await db
+    .insert(schema.hubspotSync)
     .values({ callId, dirty: true, lastPushedHash: null })
-    .onConflictDoUpdate({ target: schema.hubspotSync.callId, set: force ? { dirty: true, lastPushedHash: null } : { dirty: true } })
-    .run();
+    .onConflictDoUpdate({ target: schema.hubspotSync.callId, set: force ? { dirty: true, lastPushedHash: null } : { dirty: true } });
 }
 
 /** Seed (demo) calls are never sent to a real HubSpot portal. Simulated calls are, so the integration can be tested. */
@@ -63,10 +63,10 @@ const iso = (d: Date | null) => (d ? d.toISOString() : "");
 const num = (n: number | null | undefined) => (n === null || n === undefined ? "" : String(n));
 
 /** The deal properties for a call. Every field is always present so that cleared values also reach HubSpot. */
-export function dealProperties(call: Call, meta: Meta): Record<string, string> {
-  const owner = designerById(call.assignedDesignerId);
-  const ackBy = designerById(call.acknowledgedBy);
-  const cost = db.select().from(schema.callsCost).where(eq(schema.callsCost.callId, call.id)).get();
+export async function dealProperties(call: Call, meta: Meta): Promise<Record<string, string>> {
+  const owner = await designerById(call.assignedDesignerId);
+  const ackBy = await designerById(call.acknowledgedBy);
+  const cost = await one(db.select().from(schema.callsCost).where(eq(schema.callsCost.callId, call.id)));
   const who = call.callerName ?? call.callerPhone ?? "Unknown caller";
   const props: Record<string, string> = {
     dealname: `${who} - phone enquiry ${DateTime.fromJSDate(call.startedAt, { zone: IST }).toFormat("d LLL")}`,
@@ -107,11 +107,13 @@ async function resolveContact(api: HubSpotApi, call: Call): Promise<string> {
   let id: string | null = null;
 
   if (call.callerPhone) {
-    const sibling = db
-      .select()
-      .from(schema.calls)
-      .where(and(eq(schema.calls.callerPhone, call.callerPhone), isNotNull(schema.calls.hubspotContactId)))
-      .get();
+    const sibling = await one(
+      db
+        .select()
+        .from(schema.calls)
+        .where(and(eq(schema.calls.callerPhone, call.callerPhone), isNotNull(schema.calls.hubspotContactId)))
+        .limit(1),
+    );
     if (sibling?.hubspotContactId) id = sibling.hubspotContactId;
     else {
       const match = await api.findContactByPhone(call.callerPhone);
@@ -125,16 +127,19 @@ async function resolveContact(api: HubSpotApi, call: Call): Promise<string> {
   // Withheld caller ID: nothing to match on, so each call gets its own contact.
   if (!id) id = await api.createContact(contactProperties(call));
 
-  db.update(schema.calls).set({ hubspotContactId: id }).where(eq(schema.calls.id, call.id)).run();
+  await db.update(schema.calls).set({ hubspotContactId: id }).where(eq(schema.calls.id, call.id));
   return id;
 }
 
-function fail(callId: number, e: unknown) {
+async function fail(callId: number, e: unknown) {
   const message = e instanceof Error ? e.message : String(e);
-  const row = syncRow(callId);
+  const row = await syncRow(callId);
   const attempts = (row?.attempts ?? 0) + 1;
-  db.insert(schema.hubspotSync).values({ callId, dirty: true, attempts, lastError: message }).onConflictDoUpdate({ target: schema.hubspotSync.callId, set: { dirty: true, attempts, lastError: message } }).run();
-  if (attempts <= 3) audit("hubspot.error", { error: message, attempts }, callId);
+  await db
+    .insert(schema.hubspotSync)
+    .values({ callId, dirty: true, attempts, lastError: message })
+    .onConflictDoUpdate({ target: schema.hubspotSync.callId, set: { dirty: true, attempts, lastError: message } });
+  if (attempts <= 3) await audit("hubspot.error", { error: message, attempts }, callId);
 }
 
 /**
@@ -143,51 +148,52 @@ function fail(callId: number, e: unknown) {
  */
 export async function syncCall(callId: number, api: HubSpotApi = getHubSpot()): Promise<boolean> {
   return withLock(callId, async () => {
-    try {
-      const call0 = getCall(callId);
-      if (!call0 || isDemoCall(call0, api)) return false;
-      const meta = await metaFor(api);
-      const contactId = await resolveContact(api, call0);
+    // Another server is already syncing this call: leave it dirty and let the next pass pick it up if needed.
+    const done = await withLease(`hubspot:${callId}`, 60_000, async () => {
+      try {
+        const call0 = await getCall(callId);
+        if (!call0 || isDemoCall(call0, api)) return false;
+        const meta = await metaFor(api);
+        const contactId = await resolveContact(api, call0);
 
-      let call = getCall(callId)!;
-      const props = dealProperties(call, meta);
-      const hash = hashOf(props);
-      const row = syncRow(callId);
-      let dealId = call.hubspotDealId;
+        const call = (await getCall(callId))!;
+        const props = await dealProperties(call, meta);
+        const hash = hashOf(props);
+        const row = await syncRow(callId);
+        let dealId = call.hubspotDealId;
 
-      if (!dealId) {
-        dealId = await api.createDeal(props);
-        db.update(schema.calls).set({ hubspotDealId: dealId }).where(eq(schema.calls.id, callId)).run(); // saved before anything else can fail
-        call = getCall(callId)!;
-      } else if (row?.lastPushedHash !== hash) {
-        await api.updateDeal(dealId, props);
+        if (!dealId) {
+          dealId = await api.createDeal(props);
+          await db.update(schema.calls).set({ hubspotDealId: dealId }).where(eq(schema.calls.id, callId)); // saved before anything else can fail
+        } else if (row?.lastPushedHash !== hash) {
+          await api.updateDeal(dealId, props);
+        }
+        if (!row?.lastPushedHash) await api.associateDealWithContact(dealId, contactId); // idempotent; only until the first full success
+
+        const synced = { dirty: false, attempts: 0, lastPushedHash: hash, lastSeenStage: props.dealstage, lastSeenAckAt: props.acknowledged_at || null, lastSeenOwner: props.hubspot_owner_id ?? null, lastSyncedAt: new Date(), lastError: null };
+        await db.insert(schema.hubspotSync).values({ callId, ...synced }).onConflictDoUpdate({ target: schema.hubspotSync.callId, set: synced });
+        return true;
+      } catch (e) {
+        await fail(callId, e);
+        if (e instanceof HubSpotError && e.status === 429) throw e; // stop the whole cycle, HubSpot asked us to slow down
+        return false;
       }
-      if (!row?.lastPushedHash) await api.associateDealWithContact(dealId, contactId); // idempotent; only until the first full success
-
-      db.insert(schema.hubspotSync)
-        .values({ callId, dirty: false, attempts: 0, lastPushedHash: hash, lastSeenStage: props.dealstage, lastSeenAckAt: props.acknowledged_at || null, lastSeenOwner: props.hubspot_owner_id ?? null, lastSyncedAt: new Date(), lastError: null })
-        .onConflictDoUpdate({ target: schema.hubspotSync.callId, set: { dirty: false, attempts: 0, lastPushedHash: hash, lastSeenStage: props.dealstage, lastSeenAckAt: props.acknowledged_at || null, lastSeenOwner: props.hubspot_owner_id ?? null, lastSyncedAt: new Date(), lastError: null } })
-        .run();
-      return true;
-    } catch (e) {
-      fail(callId, e);
-      if (e instanceof HubSpotError && e.status === 429) throw e; // stop the whole cycle, HubSpot asked us to slow down
-      return false;
-    }
+    });
+    return done ?? false;
   });
 }
 
 /** Give every call that has never been synced a dirty row, then push everything dirty. */
 export async function syncDirty(api: HubSpotApi = getHubSpot()): Promise<{ pushed: number; failed: number }> {
-  const known = db.select({ id: schema.hubspotSync.callId }).from(schema.hubspotSync).all().map((r) => r.id);
-  const unsynced = db.select().from(schema.calls).where(known.length ? notInArray(schema.calls.id, known) : undefined).all();
-  for (const c of unsynced) if (!isDemoCall(c, api)) markDirty(c.id);
+  const known = (await db.select({ id: schema.hubspotSync.callId }).from(schema.hubspotSync)).map((r) => r.id);
+  const unsynced = await db.select().from(schema.calls).where(known.length ? notInArray(schema.calls.id, known) : undefined);
+  for (const c of unsynced) if (!isDemoCall(c, api)) await markDirty(c.id);
 
   const out = { pushed: 0, failed: 0 };
-  for (const r of db.select().from(schema.hubspotSync).where(eq(schema.hubspotSync.dirty, true)).all()) {
-    const c = getCall(r.callId);
+  for (const r of await db.select().from(schema.hubspotSync).where(eq(schema.hubspotSync.dirty, true))) {
+    const c = await getCall(r.callId);
     if (c && isDemoCall(c, api)) {
-      db.update(schema.hubspotSync).set({ dirty: false }).where(eq(schema.hubspotSync.callId, r.callId)).run(); // demo data: leave it out for good
+      await db.update(schema.hubspotSync).set({ dirty: false }).where(eq(schema.hubspotSync.callId, r.callId)); // demo data: leave it out for good
       continue;
     }
     if (await syncCall(r.callId, api)) out.pushed++;
@@ -212,7 +218,7 @@ function parseWhen(v: string): Date | null {
  */
 export async function pollHubSpot(now: Date = new Date(), api: HubSpotApi = getHubSpot()): Promise<{ applied: number }> {
   const meta = await metaFor(api);
-  const stored = db.select().from(schema.appState).where(eq(schema.appState.key, CURSOR_KEY)).get();
+  const stored = await one(db.select().from(schema.appState).where(eq(schema.appState.key, CURSOR_KEY)));
   const since = (stored ? Number(stored.value) : now.getTime() - 10 * 60_000) - OVERLAP_MS;
   const deals = await api.searchDealsModifiedSince(meta.pipelineId, since);
   const statusOfStage = new Map(Object.entries(meta.stages).map(([status, id]) => [id, status as CallStatus]));
@@ -224,21 +230,21 @@ export async function pollHubSpot(now: Date = new Date(), api: HubSpotApi = getH
     if (modified > cursor) cursor = modified;
     applied += await withLock(Number(deal.properties.app_call_id) || -1, () => applyInbound(deal, statusOfStage, now));
   }
-  db.insert(schema.appState).values({ key: CURSOR_KEY, value: String(cursor) }).onConflictDoUpdate({ target: schema.appState.key, set: { value: String(cursor) } }).run();
+  await db.insert(schema.appState).values({ key: CURSOR_KEY, value: String(cursor) }).onConflictDoUpdate({ target: schema.appState.key, set: { value: String(cursor) } });
   return { applied };
 }
 
 async function applyInbound(deal: DealRecord, statusOfStage: Map<string, CallStatus>, now: Date): Promise<number> {
   // Loaded lazily: calls.ts pulls in the runtime, which registers these handlers, so a static import would be circular.
   const { acknowledgeCall, applyExternalStatus, reassignCall } = await import("@/lib/calls");
-  const call = db.select().from(schema.calls).where(eq(schema.calls.hubspotDealId, deal.id)).get();
-  const row = call ? syncRow(call.id) : undefined;
+  const call = await one(db.select().from(schema.calls).where(eq(schema.calls.hubspotDealId, deal.id)).limit(1));
+  const row = call ? await syncRow(call.id) : undefined;
   if (!call || !row || row.dirty) return 0; // not ours, or the app has unsent changes and wins
 
   let changes = 0;
   const p = deal.properties;
   const patch: Partial<typeof schema.hubspotSync.$inferInsert> = {};
-  const ownerDesigner = designerByOwner(p.hubspot_owner_id);
+  const ownerDesigner = await designerByOwner(p.hubspot_owner_id);
 
   // 1. Stage moved in HubSpot -> status override, logged.
   const stage = p.dealstage ?? null;
@@ -246,7 +252,7 @@ async function applyInbound(deal: DealRecord, statusOfStage: Map<string, CallSta
     const status = statusOfStage.get(stage);
     patch.lastSeenStage = stage;
     if (status === "yet_to_be_processed" && call.status !== "yet_to_be_processed") {
-      markDirty(call.id, true); // a processed call cannot go back to "unprocessed": tell HubSpot the truth again
+      await markDirty(call.id, true); // a processed call cannot go back to "unprocessed": tell HubSpot the truth again
     } else if (status && status !== call.status) {
       await applyExternalStatus(call.id, status, "Changed in HubSpot", ownerDesigner?.id ?? null, now);
       changes++;
@@ -260,7 +266,7 @@ async function applyInbound(deal: DealRecord, statusOfStage: Map<string, CallSta
     await acknowledgeCall(call.id, ownerDesigner?.id ?? call.assignedDesignerId ?? 0, when);
     changes++;
   } else if (!ackValue && call.acknowledgedAt) {
-    markDirty(call.id, true); // cleared in HubSpot but the app has an acknowledgement: the app is right
+    await markDirty(call.id, true); // cleared in HubSpot but the app has an acknowledgement: the app is right
   }
   if (ackValue !== row.lastSeenAckAt) patch.lastSeenAckAt = ackValue;
 
@@ -274,35 +280,35 @@ async function applyInbound(deal: DealRecord, statusOfStage: Map<string, CallSta
     }
   }
 
-  if (Object.keys(patch).length) db.update(schema.hubspotSync).set({ ...patch, lastSyncedAt: new Date() }).where(eq(schema.hubspotSync.callId, call.id)).run();
+  if (Object.keys(patch).length) await db.update(schema.hubspotSync).set({ ...patch, lastSyncedAt: new Date() }).where(eq(schema.hubspotSync.callId, call.id));
   return changes;
 }
 
 /** One pass: set up HubSpot if needed, push what is dirty, read back what changed. Called every minute. */
 export async function runHubSpotCycle(now: Date = new Date()): Promise<{ pushed: number; failed: number; applied: number } | null> {
-  if (g.__hsCycle) return null;
-  g.__hsCycle = true;
-  try {
-    const api = getHubSpot();
-    const push = await syncDirty(api);
-    const { applied } = await pollHubSpot(now, api);
-    g.__hsLastCycleError = undefined;
-    return { ...push, applied };
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    if (g.__hsLastCycleError !== message) audit("hubspot.cycle_error", { error: message }); // once per distinct error, not every minute
-    g.__hsLastCycleError = message;
-    return null;
-  } finally {
-    g.__hsCycle = false;
-  }
+  const result = await withLease("hubspot-cycle", 120_000, async () => {
+    try {
+      const api = getHubSpot();
+      const push = await syncDirty(api);
+      const { applied } = await pollHubSpot(now, api);
+      g.__hsLastCycleError = undefined;
+      return { ...push, applied };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (g.__hsLastCycleError !== message) await audit("hubspot.cycle_error", { error: message }); // once per distinct error, not every minute
+      g.__hsLastCycleError = message;
+      return null;
+    }
+  });
+  return result ?? null;
 }
 
 /** App events -> HubSpot, right away. The change is recorded first, so a HubSpot outage cannot lose it. */
 export function registerHubSpotHandlers() {
-  const push = ({ callId }: { callId: number }) => {
-    markDirty(callId);
-    if (g.__hsAutoPush !== false) void syncCall(callId).catch(() => undefined);
+  const push = async ({ callId }: { callId: number }) => {
+    await markDirty(callId);
+    // After the response is sent (on Vercel, work outside after() can be cut off). A failure stays dirty and is retried by the cron pass.
+    if (g.__hsAutoPush !== false) background(() => syncCall(callId));
   };
   on("call.received", push);
   on("call.processed", push);

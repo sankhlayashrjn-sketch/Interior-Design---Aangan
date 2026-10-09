@@ -28,7 +28,9 @@ Try it:
 3. **Founder**: metrics, cost panel, and every call by status.
 4. Watch the terminal: `[mock.telegram.send]` and `[mock.hubspot.*]` lines show what would have gone out.
 
-If `npm install` ever fails with a `node-gyp` or Python error: this repo ships an `.npmrc` that skips install scripts, because `better-sqlite3` includes ready-made binaries for Windows, macOS and Linux. Make sure that file was copied with the project.
+The local database is a folder (`data/pglite`) holding a real Postgres that runs inside the app, so there is nothing to install or start. **It allows one process at a time**: stop `npm run dev` before running `db:migrate`, `db:seed`, `db:reset` or `telegram:link`. If you forget, the second process stops with a plain message instead of risking the data.
+
+This repo ships an `.npmrc` that skips dependency install scripts (none are needed, and it avoids failed native builds). Make sure that file is copied with the project.
 
 Other commands:
 
@@ -40,6 +42,7 @@ Other commands:
 | `npx tsx scripts/calibration.ts` | Prints how the 20 sample calls score under the rubric |
 | `npm run telegram:link -- <designerId>` | Makes a one-time Telegram link for a designer |
 | `npm run telegram:webhook` | Registers the Telegram webhook (live mode) |
+| `npm run hubspot:check` | Tests the HubSpot connection and lists owner IDs (read-only; add `-- --setup` to create the properties and pipeline) |
 | `npm run hubspot:reports` | Prints the founder numbers from HubSpot (live mode) |
 
 ## How it fits together
@@ -55,7 +58,7 @@ flowchart LR
 
   subgraph App["This app (one Node process)"]
     Ingest["POST /api/calls: validate, dedupe on external_id, store raw payload"]
-    Ingest --> DB[("SQLite")]
+    Ingest --> DB[("Postgres: Neon, or local PGlite")]
     Ingest --> AI["AI scoring: prompts/*.md + context/*.md"]
     AI --> Rules["Rubric in code: score, status, price guardrail"]
     Rules --> Assign["Assign designer: Cal.com host, else round-robin"]
@@ -63,7 +66,7 @@ flowchart LR
     Bookings --> Assign
     Assign --> DB
     DB --> Dash["Designer dashboard, Founder view, Settings"]
-    Sched["Scheduler: node-cron every minute, jobs in SQLite"] --> DB
+    Sched["Tick every minute: Vercel Cron or local timer. Jobs live in the database"] --> DB
   end
 
   Assign -->|"deal and contact, 60s poll back"| HubSpot["HubSpot"]
@@ -95,7 +98,12 @@ sequenceDiagram
   A->>T: pending reminders cancelled
 ```
 
-Everything runs in one long-lived Node process (Next.js). The scheduler starts from `src/instrumentation.ts`, so this needs a normal server or container, **not** a serverless platform.
+It runs in two ways, with the same code:
+
+- **Locally or on your own server:** one long-lived Node process. A timer started from `src/instrumentation.ts` ticks every minute, and Telegram is polled in-process.
+- **On Vercel with Neon Postgres:** functions are short-lived, so Vercel Cron calls `GET /api/cron/tick` every minute instead, and Telegram uses a webhook. See [Deploying to Vercel and Neon](#deploying-to-vercel-and-neon).
+
+Either way, several servers may act at once, so claiming work is done in the database, not in memory: a call is claimed before it is scored, reminders run under a lease, and acknowledgements are atomic. That is tested (`tests/serverless.test.ts`).
 
 ## The rules that must not be broken
 
@@ -137,7 +145,7 @@ Seven criteria, 100 points: service fit 25, project scale 20, budget realism 15,
 - **Simulate call** (`/simulate`): runs a transcript through the same pipeline as a real call.
 - **Settings** (`/settings`): working hours and days, holidays, SLA, slot-alert lead time, AI model name, designers (name, Telegram chat ID, HubSpot owner ID, Cal.com user), and read-only integration status.
 
-**There is no real login.** The "Viewing as" selector is demo auth. Anyone who can reach the app can open Founder and Settings. Add real authentication before putting this on a public address.
+**Login is one shared password** (`APP_PASSWORD`), checked by `src/proxy.ts`, with a signed cookie that lasts 7 days. On a laptop with no password set there is no login. **In production with no password set, the app locks itself** and says why, instead of running open. The "Viewing as" selector is still just a convenience, not a security boundary: everyone who knows the password sees everything. Move to per-person accounts when more people use it.
 
 ## Reminders
 
@@ -154,6 +162,10 @@ Reminders carry caller name, score, status, booked slot and a deep link, with Op
 
 Jobs live in the `reminder_jobs` table; a cron ticks every minute. If the server is down when a reminder falls due, it is sent when the server comes back.
 
+## Deploying to Vercel and Neon
+
+The app is built to run on Vercel with a Neon Postgres database: set `DATABASE_URL` to a Neon pooled connection string, and `vercel.json` already schedules Vercel Cron to call `/api/cron/tick` every minute. Three things are **required** in production, and the app refuses to run open without them: `APP_PASSWORD` (login), `CRON_SECRET` (cron), and `INGEST_API_KEY` (the call endpoint). Step by step, with the Hobby-plan caveat: [docs/DEPLOY.md](docs/DEPLOY.md).
+
 ## Going live, one integration at a time
 
 Set the matching `*_MODE=live` in `.env` and fill in its keys, then restart. Each can be switched independently.
@@ -162,7 +174,7 @@ Set the matching `*_MODE=live` in `.env` and fill in its keys, then restart. Eac
 |---|---|---|
 | **AI** | `AI_MODE=live`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | One retry on invalid JSON, then the call goes to "needs attention" with an "AI failed" flag. Model name can also be changed in Settings. |
 | **HubSpot** | `HUBSPOT_MODE=live`, `HUBSPOT_TOKEN`, `HUBSPOT_PORTAL_ID` | See [docs/HUBSPOT.md](docs/HUBSPOT.md) for scopes, what syncs, and building the founder dashboard. |
-| **Telegram** | `TELEGRAM_MODE=live`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `APP_BASE_URL` | Create a bot with BotFather. `APP_BASE_URL` must be https for the webhook. Run `npm run telegram:webhook`. In Settings press "Make a Telegram link" for each designer and send it to them. On localhost use `npm run telegram:poll` instead of a webhook. |
+| **Telegram** | `TELEGRAM_MODE=live`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `APP_BASE_URL` | Create a bot with BotFather. `APP_BASE_URL` must be https for the webhook. Run `npm run telegram:webhook`. In Settings press "Make a Telegram link" for each designer and send it to them. On localhost there is nothing more to do: when `APP_BASE_URL` is not https the app polls Telegram itself. |
 | **Cal.com** | `CALCOM_MODE=live`, `CALCOM_WEBHOOK_SECRET` | In Cal.com add a webhook to `APP_BASE_URL/api/bookings` for booking created, rescheduled and cancelled, with that secret. Put each designer's Cal.com username or email in Settings so a booking's host maps to a designer. |
 
 Set `INGEST_API_KEY` before exposing `POST /api/calls`; callers must then send it as header `x-api-key`.
@@ -235,7 +247,7 @@ tests/            vitest suites
 docs/HUBSPOT.md   HubSpot setup and the founder dashboard
 ```
 
-Stack: Next.js 16 (App Router), TypeScript, Tailwind 4, SQLite through Drizzle and better-sqlite3, zod for validating the AI's JSON, node-cron, luxon for IST time, Vitest. SQLite and Drizzle were chosen over Prisma for a lighter install and plain SQL migrations. The database is a single file at `data/app.db`: back it up, and run only one instance of the app.
+Stack: Next.js 16 (App Router), TypeScript, Tailwind 4, Postgres through Drizzle (Neon in production, PGlite locally and in tests), zod for validating the AI's JSON, node-cron for the local timer, luxon for IST time, Vitest. Drizzle was chosen over Prisma for a lighter install and plain SQL migrations. The app began on SQLite and moved to Postgres so it can run on Vercel, where there is no disk to keep a file on.
 
 ## Decisions worth knowing about
 
@@ -251,7 +263,8 @@ Stack: Next.js 16 (App Router), TypeScript, Tailwind 4, SQLite through Drizzle a
 - Live Anthropic, HubSpot, Telegram and Cal.com paths untested against the real services.
 - The Vaani adapter is a stub (by design).
 - No fallback that creates a Cal.com booking after the call if the voice agent cannot book mid-call. The `POST /api/bookings` webhook already links a booking that arrives after the call, so a booking created by the app later could be fed through the same function (`applyCalEvent` in `src/lib/bookings.ts`).
-- No real authentication.
+- Login is a single shared password, not per-person accounts.
+- The Neon/`pg` path has been tested only against PGlite (a real Postgres engine, so the SQL is the same), not yet against a live Neon database.
 - WhatsApp and the web form are documented, not built.
 - Three settings columns (`min_commercial_sqft`, `max_commercial_sqft`, `min_lead_weeks`) exist in the database but nothing reads them. The size limits live in `context/services.md` and `prompts/rubric.md`.
 - `npm audit` reports 4 moderate findings, all from an old `esbuild` bundled inside `drizzle-kit`, a development-only tool that generates migrations and never serves anything. Left alone because the suggested fix downgrades `drizzle-kit` to a much older version.

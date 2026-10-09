@@ -1,5 +1,5 @@
 import { and, asc, eq, ne } from "drizzle-orm";
-import { db, schema } from "@/db";
+import { db, one, schema } from "@/db";
 import { env } from "@/lib/env";
 import { getMe } from "@/lib/telegram";
 import { createLinkCode } from "@/lib/telegram-bot";
@@ -19,7 +19,7 @@ const blank = (v: string | null | undefined) => {
   return t === "" ? null : t;
 };
 
-function clean(raw: DesignerInput, selfId?: number): DesignerInput {
+async function clean(raw: DesignerInput, selfId?: number): Promise<DesignerInput> {
   const name = raw.name.trim();
   if (name.length < 2) throw new UserError("Enter the designer's name");
   const telegramChatId = blank(raw.telegramChatId);
@@ -30,36 +30,37 @@ function clean(raw: DesignerInput, selfId?: number): DesignerInput {
   if (calcom && !/^[\w.@+-]+$/.test(calcom)) throw new UserError("Cal.com user: use the username or email, with no spaces");
 
   if (telegramChatId) {
-    const clash = db.select().from(schema.designers).where(and(eq(schema.designers.telegramChatId, telegramChatId), selfId ? ne(schema.designers.id, selfId) : undefined)).get();
+    const clash = await one(db.select().from(schema.designers).where(and(eq(schema.designers.telegramChatId, telegramChatId), selfId ? ne(schema.designers.id, selfId) : undefined)).limit(1));
     if (clash) throw new UserError(`That Telegram chat is already linked to ${clash.name}`);
   }
   return { name, telegramChatId, hubspotOwnerId, calcomUser: calcom, active: raw.active, isEscalation: raw.isEscalation };
 }
 
 /** At least one active designer who takes new calls must always remain, or round-robin has nobody to assign to. */
-function assertRotationNotEmpty(selfId: number | null, next: DesignerInput) {
-  const others = db.select().from(schema.designers).all().filter((d) => d.id !== selfId && d.active && !d.isEscalation);
+async function assertRotationNotEmpty(selfId: number | null, next: DesignerInput) {
+  const others = (await db.select().from(schema.designers)).filter((d) => d.id !== selfId && d.active && !d.isEscalation);
   const selfCounts = next.active && !next.isEscalation;
   if (others.length === 0 && !selfCounts) throw new UserError("At least one active designer (not the studio head) must take new calls");
 }
 
-export function updateDesigner(id: number, raw: DesignerInput) {
-  if (!db.select().from(schema.designers).where(eq(schema.designers.id, id)).get()) throw new UserError("Designer not found");
-  const d = clean(raw, id);
-  assertRotationNotEmpty(id, d);
-  db.update(schema.designers).set(d).where(eq(schema.designers.id, id)).run();
+export async function updateDesigner(id: number, raw: DesignerInput): Promise<void> {
+  if (!(await one(db.select().from(schema.designers).where(eq(schema.designers.id, id))))) throw new UserError("Designer not found");
+  const d = await clean(raw, id);
+  await assertRotationNotEmpty(id, d);
+  await db.update(schema.designers).set(d).where(eq(schema.designers.id, id));
 }
 
-export function addDesigner(raw: DesignerInput): number {
-  const d = clean(raw);
-  const last = db.select().from(schema.designers).where(eq(schema.designers.isEscalation, false)).orderBy(asc(schema.designers.rrOrder)).all().at(-1);
-  return db.insert(schema.designers).values({ ...d, rrOrder: (last?.rrOrder ?? 0) + 1 }).returning().get().id;
+export async function addDesigner(raw: DesignerInput): Promise<number> {
+  const d = await clean(raw);
+  const last = (await db.select().from(schema.designers).where(eq(schema.designers.isEscalation, false)).orderBy(asc(schema.designers.rrOrder))).at(-1);
+  const [row] = await db.insert(schema.designers).values({ ...d, rrOrder: (last?.rrOrder ?? 0) + 1 }).returning();
+  return row.id;
 }
 
 /** A personal link the designer opens to connect their Telegram chat. */
 export async function telegramLinkFor(designerId: number): Promise<{ url: string; code: string; note: string }> {
-  if (!db.select().from(schema.designers).where(eq(schema.designers.id, designerId)).get()) throw new UserError("Designer not found");
-  const code = createLinkCode(designerId);
+  if (!(await one(db.select().from(schema.designers).where(eq(schema.designers.id, designerId))))) throw new UserError("Designer not found");
+  const code = await createLinkCode(designerId);
   let bot = "<your_bot_username>";
   let note = "";
   if (env.TELEGRAM_MODE === "live") {

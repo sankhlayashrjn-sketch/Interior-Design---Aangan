@@ -16,23 +16,23 @@ if (live.length && !process.argv.includes("--force")) {
 }
 setAutoPush(false); // the HubSpot sync cycle picks the seeded calls up later
 
-runMigrations();
-getSettings(); // creates the default settings row
+async function seedDesigners() {
+  await runMigrations();
+  await getSettings(); // creates the default settings row
 
-if (db.select().from(schema.designers).all().length === 0) {
-  db.insert(schema.designers)
-    .values([
+  if ((await db.select().from(schema.designers)).length === 0) {
+    await db.insert(schema.designers).values([
       { name: "Aryan Kulkarni", rrOrder: 1, calcomUser: "aryan@example.com" },
       { name: "Meera Iyer", rrOrder: 2, calcomUser: "meera@example.com" },
       { name: "Rohan Bhide", rrOrder: 3, calcomUser: "rohan@example.com" },
       { name: "Kavya Menon", rrOrder: 4, calcomUser: "kavya@example.com" },
       // Studio head. Receives complaints / escalations, not in round-robin.
       { name: "Nikhil Deshpande", rrOrder: 99, isEscalation: true, calcomUser: "nikhil@example.com" },
-    ])
-    .run();
-  console.log("Seeded 5 designers (set Telegram chat IDs, HubSpot owner IDs and Cal.com users in Settings).");
-} else {
-  console.log("Designers already present, skipping.");
+    ]);
+    console.log("Seeded 5 designers (set Telegram chat IDs, HubSpot owner IDs and Cal.com users in Settings).");
+  } else {
+    console.log("Designers already present, skipping.");
+  }
 }
 
 /**
@@ -48,6 +48,7 @@ const phoneFor = (id: string) => `+9198${String(76000000 + Number(id.replace(/\D
 const BOOKED: Record<string, { days: number; time: string }> = { T01: { days: 1, time: "11:00" }, T06: { days: 3, time: "15:00" }, T11: { days: 3, time: "10:30" } };
 
 async function main() {
+await seedDesigners();
 let created = 0;
 for (let i = 0; i < SEED.length; i++) {
   const s = SEED[i];
@@ -75,22 +76,24 @@ for (let i = 0; i < SEED.length; i++) {
 
   // Older qualified calls were already picked up by their designer.
   if ((DAYS_AGO[i] ?? 0) >= 2 && call.status === "qualified" && !call.acknowledgedAt && call.assignedDesignerId) {
-    db.update(schema.calls)
+    await db
+      .update(schema.calls)
       .set({ acknowledgedAt: new Date(when.toMillis() + 25 * 60_000), acknowledgedBy: call.assignedDesignerId })
-      .where(eq(schema.calls.id, call.id))
-      .run();
+      .where(eq(schema.calls.id, call.id));
   }
 }
 
 // Demo calls are old: do not let them fire reminders (or, with TELEGRAM_MODE=live, message real people).
-db.update(schema.reminderJobs).set({ state: "cancelled", note: SEED_NOTE }).where(eq(schema.reminderJobs.state, "pending")).run();
+await db.update(schema.reminderJobs).set({ state: "cancelled", note: SEED_NOTE }).where(eq(schema.reminderJobs.state, "pending"));
 
-const all = db.select().from(schema.calls).all();
+const all = await db.select().from(schema.calls);
 const by = (st: string) => all.filter((c) => c.status === st).length;
 console.log(`Seeded ${created} sample calls (${all.length} total): ${by("qualified")} qualified, ${by("needs_attention")} needs attention, ${by("disqualified")} disqualified.`);
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0)) // the database connection would otherwise keep the process alive
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });

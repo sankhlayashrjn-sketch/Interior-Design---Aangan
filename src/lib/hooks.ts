@@ -35,7 +35,7 @@ export async function emit<K extends keyof Events>(event: K, payload: Events[K])
     try {
       await fn(payload);
     } catch (e) {
-      audit("hook.error", { event, error: e instanceof Error ? e.message : String(e) });
+      await audit("hook.error", { event, error: e instanceof Error ? e.message : String(e) });
     }
   }
 }

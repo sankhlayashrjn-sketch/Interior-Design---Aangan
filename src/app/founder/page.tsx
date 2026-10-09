@@ -31,12 +31,12 @@ export default async function FounderPage({ searchParams }: { searchParams: Prom
   const now = new Date();
   const range = parseRange(sp.range);
   const tab: CallStatus = TABS.some((t) => t.key === sp.tab) ? (sp.tab as CallStatus) : "qualified";
-  const m = founderMetrics(range, now);
-  const cost = costPanel(range, now);
-  const counts = statusCounts();
-  const rows = founderList(tab);
+  const m = await founderMetrics(range, now);
+  const cost = await costPanel(range, now);
+  const counts = await statusCounts();
+  const rows = await founderList(tab);
   const selectedId = Number(sp.call) || null;
-  const detail = selectedId ? getDetail(selectedId) : null;
+  const detail = selectedId ? await getDetail(selectedId) : null;
   const rangeLabel = RANGES.find((r) => r.key === range)!.label.toLowerCase();
   const q = (over: Record<string, string>) => `/founder?${new URLSearchParams({ tab, range, ...over }).toString()}`;
 

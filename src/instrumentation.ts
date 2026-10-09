@@ -1,9 +1,13 @@
 export async function register() {
-  // The scheduler needs a long-running Node process (not the Edge runtime, not serverless).
-  if (process.env.NEXT_RUNTIME === "nodejs") {
+  // Only where the server stays up: `next dev` and a self-hosted `next start`.
+  // On Vercel functions are short-lived, so there is no timer here. Vercel Cron calls /api/cron/tick instead,
+  // and the database is migrated at build time (see README, "Deploying to Vercel and Neon").
+  if (process.env.NEXT_RUNTIME === "nodejs" && !process.env.VERCEL) {
     const { runMigrations } = await import("./db");
-    runMigrations();
+    await runMigrations();
     const { startScheduler } = await import("./lib/scheduler");
-    startScheduler();
+    await startScheduler();
+    const { startTelegramPolling } = await import("./lib/telegram-poll");
+    await startTelegramPolling();
   }
 }

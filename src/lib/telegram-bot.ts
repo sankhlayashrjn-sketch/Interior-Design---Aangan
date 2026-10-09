@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { db, schema } from "@/db";
+import { db, one, schema } from "@/db";
 import { acknowledgeCall, UserError } from "@/lib/calls";
 import { answerCallback, clearButtons, reply } from "@/lib/telegram";
 
@@ -12,31 +12,31 @@ export interface TgUpdate {
 }
 
 /** One-time code a designer sends to the bot (t.me/<bot>?start=<code>) to link their chat. */
-export function createLinkCode(designerId: number, now: Date = new Date()): string {
-  db.delete(schema.telegramLinkCodes).where(eq(schema.telegramLinkCodes.designerId, designerId)).run();
+export async function createLinkCode(designerId: number, now: Date = new Date()): Promise<string> {
+  await db.delete(schema.telegramLinkCodes).where(eq(schema.telegramLinkCodes.designerId, designerId));
   const code = randomBytes(8).toString("hex");
-  db.insert(schema.telegramLinkCodes).values({ code, designerId, createdAt: now }).run();
+  await db.insert(schema.telegramLinkCodes).values({ code, designerId, createdAt: now });
   return code;
 }
 
-const designerByChat = (chatId: number | string) => db.select().from(schema.designers).where(eq(schema.designers.telegramChatId, String(chatId))).get();
+const designerByChat = (chatId: number | string) => one(db.select().from(schema.designers).where(eq(schema.designers.telegramChatId, String(chatId))).limit(1));
 
 async function onStart(chatId: number, text: string, now: Date) {
   const code = text.split(/\s+/)[1];
   if (!code) {
-    const known = designerByChat(chatId);
+    const known = await designerByChat(chatId);
     return reply(String(chatId), known ? `You are linked as ${known.name}. Reminders will arrive here.` : "To link this chat, open the personal link your studio admin gave you (it starts this bot with a code).");
   }
-  const row = db.select().from(schema.telegramLinkCodes).where(eq(schema.telegramLinkCodes.code, code)).get();
+  const row = await one(db.select().from(schema.telegramLinkCodes).where(eq(schema.telegramLinkCodes.code, code)));
   if (!row || now.getTime() - row.createdAt.getTime() > CODE_TTL_MS) {
-    const known = designerByChat(chatId);
+    const known = await designerByChat(chatId);
     if (known) return reply(String(chatId), `This chat is already linked as ${known.name}. Reminders will arrive here.`); // the one-time link was used already
     return reply(String(chatId), "That link is invalid or has expired. Ask your studio admin for a new one.");
   }
-  const d = db.select().from(schema.designers).where(eq(schema.designers.id, row.designerId)).get();
+  const d = await one(db.select().from(schema.designers).where(eq(schema.designers.id, row.designerId)));
   if (!d) return reply(String(chatId), "That link is no longer valid.");
-  db.update(schema.designers).set({ telegramChatId: String(chatId) }).where(eq(schema.designers.id, d.id)).run();
-  db.delete(schema.telegramLinkCodes).where(eq(schema.telegramLinkCodes.code, code)).run();
+  await db.update(schema.designers).set({ telegramChatId: String(chatId) }).where(eq(schema.designers.id, d.id));
+  await db.delete(schema.telegramLinkCodes).where(eq(schema.telegramLinkCodes.code, code));
   return reply(String(chatId), `Linked. You will get Aangan enquiry reminders here, ${d.name}.`);
 }
 
@@ -44,7 +44,7 @@ async function onCallback(q: NonNullable<TgUpdate["callback_query"]>) {
   const chatId = q.message?.chat.id;
   const m = /^ack:(\d+)$/.exec(q.data ?? "");
   if (!chatId || !m) return answerCallback(q.id, "Unknown action");
-  const d = designerByChat(chatId);
+  const d = await designerByChat(chatId);
   if (!d) return answerCallback(q.id, "This chat is not linked to a designer");
   try {
     await acknowledgeCall(Number(m[1]), d.id); // same path as the dashboard button: cancels reminders, updates HubSpot

@@ -21,10 +21,10 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
 
   const tab: Tab = TABS.some((t) => t.key === sp.tab) ? (sp.tab as Tab) : "pending";
   const now = new Date();
-  const rows = listForDesigner(me.id, tab, now);
-  const counts = countsForDesigner(me.id);
+  const rows = await listForDesigner(me.id, tab, now);
+  const counts = await countsForDesigner(me.id);
   const selectedId = Number(sp.call) || null;
-  const detail = selectedId ? getDetail(selectedId) : null;
+  const detail = selectedId ? await getDetail(selectedId) : null;
   const listHref = `/?tab=${tab}`;
 
   return (

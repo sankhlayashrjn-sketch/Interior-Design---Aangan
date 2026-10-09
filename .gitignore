@@ -1,6 +1,6 @@
 node_modules
 .next
-data/*.db*
+data/
 .env
 .env.local
 next-env.d.ts

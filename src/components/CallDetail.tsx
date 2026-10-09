@@ -7,7 +7,7 @@ import { fmtDateTime, fmtDue, PROPERTY_LABEL } from "@/lib/format";
 import { splitTurns } from "@/lib/guardrail";
 import { CRITERIA } from "@/lib/rubric";
 
-type Detail = NonNullable<ReturnType<typeof getDetail>>;
+type Detail = NonNullable<Awaited<ReturnType<typeof getDetail>>>;
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

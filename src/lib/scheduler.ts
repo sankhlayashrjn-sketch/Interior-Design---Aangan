@@ -1,35 +1,50 @@
-import cron from "node-cron";
 import { audit } from "@/lib/audit";
-import { processPending } from "@/lib/ingest";
 import { runHubSpotCycle } from "@/lib/hubspot/sync";
+import { processPending } from "@/lib/ingest";
 import { reconcileReminders, runDueJobs } from "@/lib/reminders";
+
+export interface TickResult {
+  processed: number;
+  reminders: { sent: number; cancelled: number; retrying: number };
+  hubspot: { pushed: number; failed: number; applied: number } | null;
+}
+
+/**
+ * One pass of all the background work. This is the single place that does it, and it is safe to run from
+ * anywhere, any number of times: the local timer (below), Vercel Cron, or any outside pinger call the same function.
+ * Each part takes its own lease, so overlapping runs never send a reminder or create a deal twice.
+ */
+export async function runTick(now: Date = new Date()): Promise<TickResult> {
+  const processed = await processPending(); // calls saved but never processed (crash, AI outage)
+  await reconcileReminders(now); // processed calls that have no reminder yet
+  const reminders = await runDueJobs(now);
+  const hubspot = await runHubSpotCycle(now); // push anything not yet sent, then read back changes made in HubSpot
+  return { processed, reminders, hubspot };
+}
 
 const g = globalThis as { __schedulerStarted?: boolean };
 
 async function tick() {
   try {
-    const r = await runDueJobs();
-    if (r.sent || r.cancelled || r.retrying) console.log(`[reminders] sent ${r.sent}, cancelled ${r.cancelled}, retrying ${r.retrying}`);
+    const r = await runTick();
+    const { reminders: rem, hubspot: hs } = r;
+    if (r.processed) console.log(`[tick] processed ${r.processed} waiting calls`);
+    if (rem.sent || rem.cancelled || rem.retrying) console.log(`[reminders] sent ${rem.sent}, cancelled ${rem.cancelled}, retrying ${rem.retrying}`);
+    if (hs && (hs.pushed || hs.failed || hs.applied)) console.log(`[hubspot] pushed ${hs.pushed}, failed ${hs.failed}, applied from HubSpot ${hs.applied}`);
   } catch (e) {
-    audit("scheduler.error", { error: e instanceof Error ? e.message : String(e) });
+    await audit("scheduler.error", { error: e instanceof Error ? e.message : String(e) });
   }
-  // HubSpot: push anything not yet sent, then read back changes made there (every minute).
-  const hs = await runHubSpotCycle();
-  if (hs && (hs.pushed || hs.failed || hs.applied)) console.log(`[hubspot] pushed ${hs.pushed}, failed ${hs.failed}, applied from HubSpot ${hs.applied}`);
 }
 
 /**
- * Persistent scheduler. The queue lives in the reminder_jobs table, so nothing is lost if the process
- * restarts: on startup we catch up on anything that fell due while we were down, then tick every minute.
+ * Local and self-hosted timer: runs a tick once a minute inside the server process.
+ * Not used on Vercel, where functions are short-lived: there, Vercel Cron calls /api/cron/tick instead.
  */
-export function startScheduler() {
+export async function startScheduler() {
   if (g.__schedulerStarted) return;
   g.__schedulerStarted = true;
-  void (async () => {
-    await processPending(); // calls saved but never processed (crash, API outage)
-    reconcileReminders();
-    await tick();
-  })();
+  const cron = (await import("node-cron")).default;
+  void tick(); // catch up straight away on anything that fell due while the server was down
   cron.schedule("* * * * *", () => void tick(), { timezone: "Asia/Kolkata" });
-  console.log("[reminders] scheduler started (every minute)");
+  console.log("[scheduler] started (every minute)");
 }

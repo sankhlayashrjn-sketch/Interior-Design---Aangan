@@ -26,7 +26,7 @@ async function setDesigner(id: number) {
 /** Demo auth: pick who you are. */
 export async function selectDesigner(formData: FormData) {
   const id = Number(formData.get("designerId"));
-  if (activeDesigners().some((d) => d.id === id)) await setDesigner(id);
+  if ((await activeDesigners()).some((d) => d.id === id)) await setDesigner(id);
   const next = String(formData.get("next") ?? "/");
   redirect(next.startsWith("/") ? next : "/");
 }
@@ -35,7 +35,7 @@ export async function selectDesigner(formData: FormData) {
 export async function openAs(formData: FormData) {
   const id = Number(formData.get("designerId"));
   const callId = Number(formData.get("callId"));
-  if (activeDesigners().some((d) => d.id === id)) await setDesigner(id);
+  if ((await activeDesigners()).some((d) => d.id === id)) await setDesigner(id);
   redirect(`/?tab=pending&call=${callId}`);
 }
 
@@ -87,7 +87,7 @@ export async function simulateAction(_prev: SimulateState, formData: FormData): 
       booking_id: null,
       booked_slot: slot ? slot.toISO() : null,
     });
-    const designer = activeDesigners().find((d) => d.id === call.assignedDesignerId);
+    const designer = (await activeDesigners()).find((d) => d.id === call.assignedDesignerId);
     revalidatePath("/");
     return {
       result: { id: call.id, status: call.status, score: call.score, reason: call.reason, designerId: call.assignedDesignerId, designerName: designer?.name ?? null, afterHours: call.afterHours, duplicate: outcome === "duplicate" },

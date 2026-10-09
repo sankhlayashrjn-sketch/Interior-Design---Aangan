@@ -49,12 +49,12 @@ export function toInlineKeyboard(rows: Button[][] | undefined) {
   return kb.length ? { inline_keyboard: kb } : undefined;
 }
 
-async function api<T = unknown>(method: string, body: Record<string, unknown>): Promise<{ ok: boolean; result?: T; description?: string }> {
+async function api<T = unknown>(method: string, body: Record<string, unknown>, timeoutMs = 10_000): Promise<{ ok: boolean; result?: T; description?: string }> {
   const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   return (await res.json()) as { ok: boolean; result?: T; description?: string };
 }
@@ -118,4 +118,5 @@ export async function setWebhook(): Promise<unknown> {
 
 export const deleteWebhook = () => api("deleteWebhook", { drop_pending_updates: false });
 export const getMe = () => api<{ username: string }>("getMe", {});
-export const getUpdates = (offset: number) => api<unknown[]>("getUpdates", { offset, timeout: 25, allowed_updates: ["message", "callback_query"] });
+/** Long poll: Telegram holds the request open up to 25 seconds, so our own timeout must be longer than that. */
+export const getUpdates = (offset: number) => api<unknown[]>("getUpdates", { offset, timeout: 25, allowed_updates: ["message", "callback_query"] }, 35_000);

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
+import { same } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { ingestCall } from "@/lib/ingest";
 
@@ -11,9 +12,9 @@ export const runtime = "nodejs";
  * 201 = created and processed, 200 = duplicate external_id (nothing re-processed), 400 = invalid body.
  */
 export async function POST(req: Request) {
-  if (env.INGEST_API_KEY && req.headers.get("x-api-key") !== env.INGEST_API_KEY) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  // A public endpoint must be authenticated. With no key set it is only open on a laptop, never in production.
+  const keyOk = env.INGEST_API_KEY ? same(req.headers.get("x-api-key") ?? "", env.INGEST_API_KEY) : process.env.NODE_ENV !== "production";
+  if (!keyOk) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   let body: unknown;
   try {
     body = await req.json();

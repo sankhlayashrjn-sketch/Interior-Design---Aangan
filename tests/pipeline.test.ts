@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { count, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { db, schema } from "@/db";
+import { db, schema, one } from "@/db";
 import { applyCalEvent } from "@/lib/bookings";
 import { ingestCall, processPending } from "@/lib/ingest";
 import { setAssigner, defaultAssigner } from "@/lib/assignment";
@@ -9,12 +9,12 @@ import { verifyCalSignature } from "@/lib/bookings";
 import { GOLD } from "./fixtures/gold-scores";
 import { istIso, payloadFor, resetDb, sample } from "./helpers";
 
-beforeEach(() => {
-  resetDb();
+beforeEach(async () => {
+  await resetDb();
   setAssigner(defaultAssigner);
 });
 
-const rows = () => db.select().from(schema.calls).all();
+const rows = async () => (await db.select().from(schema.calls));
 
 describe("call dedupe on external_id", () => {
   it("a repeat POST returns the stored call and does not create or reprocess anything", async () => {
@@ -25,14 +25,14 @@ describe("call dedupe on external_id", () => {
     expect(second.outcome).toBe("duplicate");
     expect(second.call.id).toBe(first.call.id);
     expect(second.call.transcript).toBe(sample("T01").transcript); // original kept
-    expect(rows()).toHaveLength(1);
-    expect(db.select({ n: count() }).from(schema.callsCost).get()!.n).toBe(1);
+    expect(await rows()).toHaveLength(1);
+    expect((await one(db.select({ n: count() }).from(schema.callsCost)))!.n).toBe(1);
   });
 
   it("different external_ids are different calls", async () => {
     await ingestCall(payloadFor("T01"));
     await ingestCall(payloadFor("T01"));
-    expect(rows()).toHaveLength(2);
+    expect(await rows()).toHaveLength(2);
   });
 
   it("stores the raw payload exactly as received", async () => {
@@ -43,7 +43,7 @@ describe("call dedupe on external_id", () => {
 
   it("rejects an invalid payload without saving anything", async () => {
     await expect(ingestCall({ external_id: "x", started_at: "not a date", duration_sec: 1, transcript: "" })).rejects.toThrow();
-    expect(rows()).toHaveLength(0);
+    expect(await rows()).toHaveLength(0);
   });
 
   it("accepts a null caller_phone (caller ID withheld)", async () => {
@@ -57,12 +57,12 @@ describe("workflow", () => {
     const { call } = await ingestCall(payloadFor("T01"), { process: false });
     expect(call.status).toBe("yet_to_be_processed");
     expect(await processPending()).toBe(1);
-    expect(db.select().from(schema.calls).get()!.status).toBe("qualified");
+    expect((await one(db.select().from(schema.calls)))!.status).toBe("qualified");
   });
 
   it("writes a cost row with telephony minutes", async () => {
     const { call } = await ingestCall(payloadFor("T02", { duration_sec: 300 }));
-    const c = db.select().from(schema.callsCost).where(eq(schema.callsCost.callId, call.id)).get()!;
+    const c = (await one(db.select().from(schema.callsCost).where(eq(schema.callsCost.callId, call.id))))!;
     expect(c.telephonyMinutes).toBe(5);
     expect(c.aiCostInr).toBeGreaterThan(0);
   });
@@ -88,7 +88,7 @@ describe("no auto-reject", () => {
     expect(call.reason).toMatch(/Nashik/);
     expect(call.assignedDesignerId).not.toBeNull();
     expect(call.summary).toBeTruthy();
-    expect(rows()).toHaveLength(1);
+    expect(await rows()).toHaveLength(1);
   });
 
   it("budget far below scope is needs_attention, never disqualified", async () => {
@@ -125,13 +125,13 @@ describe("assignment", () => {
   it("round-robins across active designers and skips the studio head", async () => {
     const ids: number[] = [];
     for (let i = 0; i < 5; i++) ids.push((await ingestCall(payloadFor("T01"))).call.assignedDesignerId!);
-    const names = ids.map((id) => db.select().from(schema.designers).where(eq(schema.designers.id, id)).get()!.name);
+    const names = await Promise.all(ids.map(async (id) => (await one(db.select().from(schema.designers).where(eq(schema.designers.id, id))))!.name));
     expect(names).toEqual(["Aryan", "Meera", "Rohan", "Kavya", "Aryan"]);
   });
 
   it("existing-client complaints go to the studio head", async () => {
     const { call } = await ingestCall(payloadFor("T09"));
-    expect(db.select().from(schema.designers).where(eq(schema.designers.id, call.assignedDesignerId!)).get()!.name).toBe("Nikhil");
+    expect((await one(db.select().from(schema.designers).where(eq(schema.designers.id, call.assignedDesignerId!))))!.name).toBe("Nikhil");
   });
 
   it("is pluggable", async () => {
@@ -177,13 +177,13 @@ describe("bookings", () => {
       triggerEvent: "BOOKING_RESCHEDULED",
       payload: { uid: "bk2", rescheduleUid: "bk1", startTime: istIso("2026-10-10 11:00"), organizer: { email: "meera@aangan.test" } },
     });
-    let c = db.select().from(schema.calls).where(eq(schema.calls.id, call.id)).get()!;
+    let c = (await one(db.select().from(schema.calls).where(eq(schema.calls.id, call.id))))!;
     expect(c.bookingStatus).toBe("rescheduled");
     expect(c.bookedSlot!.toISOString()).toBe(istIso("2026-10-10 11:00"));
-    expect(db.select().from(schema.designers).where(eq(schema.designers.id, c.assignedDesignerId!)).get()!.name).toBe("Meera");
+    expect((await one(db.select().from(schema.designers).where(eq(schema.designers.id, c.assignedDesignerId!))))!.name).toBe("Meera");
 
     await applyCalEvent({ triggerEvent: "BOOKING_CANCELLED", payload: { uid: "bk2", startTime: istIso("2026-10-10 11:00") } });
-    c = db.select().from(schema.calls).where(eq(schema.calls.id, call.id)).get()!;
+    c = (await one(db.select().from(schema.calls).where(eq(schema.calls.id, call.id))))!;
     expect(c.bookingStatus).toBe("cancelled");
     expect(c.scoreBreakdown!.next_step.points).toBeLessThan(5);
   });
@@ -200,10 +200,10 @@ describe("bookings", () => {
 
   it("an acknowledged call is not reassigned by a later booking host", async () => {
     const { call } = await ingestCall(payloadFor("T01", { booking_id: "bk9", booked_slot: istIso("2026-10-09 15:00") }));
-    db.update(schema.calls).set({ acknowledgedAt: new Date() }).where(eq(schema.calls.id, call.id)).run();
-    const before = db.select().from(schema.calls).where(eq(schema.calls.id, call.id)).get()!.assignedDesignerId;
+    await db.update(schema.calls).set({ acknowledgedAt: new Date() }).where(eq(schema.calls.id, call.id));
+    const before = (await one(db.select().from(schema.calls).where(eq(schema.calls.id, call.id))))!.assignedDesignerId;
     await applyCalEvent({ triggerEvent: "BOOKING_RESCHEDULED", payload: { uid: "bk9", startTime: istIso("2026-10-11 11:00"), organizer: { email: "meera@aangan.test" } } });
-    expect(db.select().from(schema.calls).where(eq(schema.calls.id, call.id)).get()!.assignedDesignerId).toBe(before);
+    expect((await one(db.select().from(schema.calls).where(eq(schema.calls.id, call.id))))!.assignedDesignerId).toBe(before);
   });
 });
 
@@ -211,12 +211,12 @@ describe("Cal.com signature", () => {
   const body = JSON.stringify({ a: 1 });
   const sig = createHmac("sha256", "s3cret").update(body).digest("hex");
   it("accepts a correct HMAC", () => expect(verifyCalSignature(body, sig, "s3cret", false)).toBe(true));
-  it("rejects a wrong or missing signature", () => {
+  it("rejects a wrong or missing signature", async () => {
     expect(verifyCalSignature(body, "0".repeat(64), "s3cret", false)).toBe(false);
     expect(verifyCalSignature(body, null, "s3cret", false)).toBe(false);
     expect(verifyCalSignature(body + " ", sig, "s3cret", false)).toBe(false);
   });
-  it("with no secret, only passes while mocking", () => {
+  it("with no secret, only passes while mocking", async () => {
     expect(verifyCalSignature(body, null, "", true)).toBe(true);
     expect(verifyCalSignature(body, null, "", false)).toBe(false);
   });

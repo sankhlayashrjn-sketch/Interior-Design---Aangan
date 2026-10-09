@@ -1,8 +1,8 @@
 import { DateTime } from "luxon";
-import { and, desc, eq, gte, lt, ne } from "drizzle-orm";
+import { and, count, desc, eq, gte, lt } from "drizzle-orm";
 import { db, schema } from "@/db";
 import type { CallStatus } from "@/db/schema";
-import { getSettings, hoursConfig } from "@/lib/settings";
+import { getSettings, loadHours } from "@/lib/settings";
 import { IST, workingMinutesBetween } from "@/lib/working-hours";
 
 type Call = typeof schema.calls.$inferSelect;
@@ -28,8 +28,7 @@ const callsSince = (start: Date, end?: Date) =>
   db
     .select()
     .from(schema.calls)
-    .where(and(gte(schema.calls.startedAt, start), end ? lt(schema.calls.startedAt, end) : undefined))
-    .all();
+    .where(and(gte(schema.calls.startedAt, start), end ? lt(schema.calls.startedAt, end) : undefined));
 
 export interface FounderMetrics {
   callsToday: number;
@@ -44,10 +43,10 @@ export interface FounderMetrics {
   booked: number;
 }
 
-export function founderMetrics(range: Range, now: Date = new Date()): FounderMetrics {
-  const today = callsSince(at(now).startOf("day").toJSDate());
-  const rows = callsSince(rangeStart(range, now)).filter((c) => c.status !== "yet_to_be_processed");
-  const cfg = hoursConfig();
+export async function founderMetrics(range: Range, now: Date = new Date()): Promise<FounderMetrics> {
+  const today = await callsSince(at(now).startOf("day").toJSDate());
+  const rows = (await callsSince(rangeStart(range, now))).filter((c) => c.status !== "yet_to_be_processed");
+  const cfg = await loadHours();
 
   // SLA: judged only once it can be judged (acknowledged, or past due and still waiting).
   const judged = rows.filter((c) => c.acknowledgedAt || (c.dueAt && c.dueAt.getTime() < now.getTime()));
@@ -79,18 +78,17 @@ export interface CostPanel {
 
 const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 
-export function costPanel(range: Range, now: Date = new Date()): CostPanel {
+export async function costPanel(range: Range, now: Date = new Date()): Promise<CostPanel> {
   const costs = (start: Date, end?: Date) =>
     db
       .select({ call: schema.calls, cost: schema.callsCost })
       .from(schema.calls)
       .innerJoin(schema.callsCost, eq(schema.callsCost.callId, schema.calls.id))
-      .where(and(gte(schema.calls.startedAt, start), end ? lt(schema.calls.startedAt, end) : undefined))
-      .all();
+      .where(and(gte(schema.calls.startedAt, start), end ? lt(schema.calls.startedAt, end) : undefined));
 
-  const inRange = costs(rangeStart(range, now));
+  const inRange = await costs(rangeStart(range, now));
   const monthStart = at(now).startOf("month");
-  const month = costs(monthStart.toJSDate(), monthStart.plus({ months: 1 }).toJSDate());
+  const month = await costs(monthStart.toJSDate(), monthStart.plus({ months: 1 }).toJSDate());
 
   const ai = month.reduce((s, r) => s + r.cost.aiCostInr, 0);
   const tel = month.reduce((s, r) => s + r.cost.telephonyCostInr, 0);
@@ -111,23 +109,16 @@ export function costPanel(range: Range, now: Date = new Date()): CostPanel {
   };
 }
 
-
-export function founderList(status: CallStatus, limit = 200): (Call & { designerName: string | null })[] {
-  const designers = db.select().from(schema.designers).all();
-  return db
-    .select()
-    .from(schema.calls)
-    .where(eq(schema.calls.status, status))
-    .orderBy(desc(schema.calls.startedAt))
-    .limit(limit)
-    .all()
-    .map((c) => ({ ...c, designerName: designers.find((d) => d.id === c.assignedDesignerId)?.name ?? null }));
+export async function founderList(status: CallStatus, limit = 200): Promise<(Call & { designerName: string | null })[]> {
+  const designers = await db.select().from(schema.designers);
+  const rows = await db.select().from(schema.calls).where(eq(schema.calls.status, status)).orderBy(desc(schema.calls.startedAt)).limit(limit);
+  return rows.map((c) => ({ ...c, designerName: designers.find((d) => d.id === c.assignedDesignerId)?.name ?? null }));
 }
 
-export function statusCounts(): Record<CallStatus, number> {
+export async function statusCounts(): Promise<Record<CallStatus, number>> {
   const out: Record<CallStatus, number> = { qualified: 0, disqualified: 0, needs_attention: 0, yet_to_be_processed: 0 };
-  for (const c of db.select({ s: schema.calls.status }).from(schema.calls).where(ne(schema.calls.status, "yet_to_be_processed")).all()) out[c.s]++;
-  out.yet_to_be_processed = db.select().from(schema.calls).where(eq(schema.calls.status, "yet_to_be_processed")).all().length;
+  const rows = await db.select({ status: schema.calls.status, n: count() }).from(schema.calls).groupBy(schema.calls.status);
+  for (const r of rows) out[r.status] = Number(r.n);
   return out;
 }
 

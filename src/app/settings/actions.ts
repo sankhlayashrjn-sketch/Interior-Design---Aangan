@@ -30,7 +30,7 @@ export async function saveSettingsAction(_prev: FormState, f: FormData): Promise
   const holidays = text(f, "holidays")
     .split(/[\s,]+/)
     .filter(Boolean);
-  const before = getSettings();
+  const before = await getSettings();
   try {
     const after = await saveSettings({
       workStart: text(f, "workStart"),
@@ -62,7 +62,7 @@ function designerFrom(f: FormData): DesignerInput {
 
 export async function saveDesignerAction(_prev: FormState, f: FormData): Promise<FormState> {
   try {
-    updateDesigner(Number(f.get("id")), designerFrom(f));
+    await updateDesigner(Number(f.get("id")), designerFrom(f));
     revalidatePath("/settings");
     return { ok: "Saved" };
   } catch (e) {
@@ -72,7 +72,7 @@ export async function saveDesignerAction(_prev: FormState, f: FormData): Promise
 
 export async function addDesignerAction(_prev: FormState, f: FormData): Promise<FormState> {
   try {
-    addDesigner({ ...designerFrom(f), active: true, isEscalation: false });
+    await addDesigner({ ...designerFrom(f), active: true, isEscalation: false });
     revalidatePath("/settings");
     return { ok: "Designer added" };
   } catch (e) {
