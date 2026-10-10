@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { ingestCall } from "@/lib/ingest";
+import { bookAfterCall } from "@/lib/voice/book-after-call";
 import { voiceProvider } from "@/lib/voice/vaani";
 
 export const runtime = "nodejs";
@@ -21,8 +22,11 @@ export async function POST(req: Request) {
   let created = 0;
   try {
     for (const payload of await voiceProvider.parseWebhook(raw)) {
-      const { outcome } = await ingestCall(payload);
-      if (outcome === "created") created++;
+      const { outcome, call } = await ingestCall(payload);
+      if (outcome === "created") {
+        created++;
+        await bookFromEntities(call.id, raw);
+      }
     }
   } catch (e) {
     if (e instanceof ZodError) return NextResponse.json({ ok: true, ignored: "payload did not fit" });
@@ -30,4 +34,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "internal error" }, { status: 500 }); // let Vaani retry
   }
   return NextResponse.json({ ok: true, created });
+}
+
+/** The caller gave an email and a preferred time on the call: book the nearest free Cal.com slot. Never fails the webhook. */
+async function bookFromEntities(callId: number, raw: string) {
+  try {
+    const entities = (JSON.parse(raw) as { data?: { entities?: unknown } }).data?.entities;
+    await bookAfterCall(callId, entities);
+  } catch (e) {
+    console.error("[vaani booking]", e);
+  }
 }
