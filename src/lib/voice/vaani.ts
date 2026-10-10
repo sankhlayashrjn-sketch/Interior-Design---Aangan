@@ -1,3 +1,5 @@
+import { eq } from "drizzle-orm";
+import { db, one, schema } from "@/db";
 import { env } from "@/lib/env";
 import type { IngestPayload } from "@/lib/ingest";
 import type { VoiceProvider } from "./provider";
@@ -113,6 +115,28 @@ async function transcriptFor(callId: string): Promise<string> {
   return typeof d.transcription === "string" && /(agent|user)\s*:/i.test(d.transcription) ? d.transcription : "";
 }
 
+const phoneKey = (callId: string) => `vaani_phone:${callId}`;
+
+/**
+ * Vaani's call-history can fail for an account (it has answered 500 "Invalid client_id format" here), and the
+ * finished-call event carries no phone number. The earlier "call_started" event does (phone_number, keyed by
+ * room_name = call id), so remember it until the transcript arrives.
+ */
+export async function rememberCallerPhone(rawBody: string): Promise<void> {
+  try {
+    const evt = JSON.parse(rawBody) as { event?: string; room_name?: string; phone_number?: string };
+    const phone = evt.phone_number?.trim();
+    const digits = phone?.replace(/[\s-]/g, "") ?? "";
+    if (!evt.room_name || !/^\+?\d{8,15}$/.test(digits)) return;
+    const value = digits.startsWith("+") ? digits : `+${digits}`;
+    await db.insert(schema.appState).values({ key: phoneKey(evt.room_name), value }).onConflictDoUpdate({ target: schema.appState.key, set: { value } });
+  } catch {
+    /* an event we cannot read is simply not remembered */
+  }
+}
+
+const recallPhone = async (callId: string) => (await one(db.select().from(schema.appState).where(eq(schema.appState.key, phoneKey(callId)))))?.value ?? null;
+
 export class VaaniAdapter implements VoiceProvider {
   readonly name = "vaani";
 
@@ -161,6 +185,7 @@ export class VaaniAdapter implements VoiceProvider {
       Start_time: new Date(ended.getTime() - durationMs).toISOString(),
       End_time: ended.toISOString(),
     };
+    if (!record) fallback.from_number = await recallPhone(callId);
     const payload = toPayload(record ?? fallback, typeof d.transcript === "string" ? d.transcript : "");
     if (typeof d.recording_url === "string" && d.recording_url) payload.recording_url = recordingUrl(callId);
     return [payload];

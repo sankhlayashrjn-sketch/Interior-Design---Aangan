@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { ingestCall } from "@/lib/ingest";
 import { bookAfterCall } from "@/lib/voice/book-after-call";
-import { voiceProvider } from "@/lib/voice/vaani";
+import { rememberCallerPhone, voiceProvider } from "@/lib/voice/vaani";
 
 export const runtime = "nodejs";
 export const maxDuration = 120; // scoring a call is an AI request
@@ -19,6 +19,7 @@ export async function POST(req: Request) {
   const key = new URL(req.url).searchParams.get("key");
   if (!voiceProvider.verifyWebhook(raw, req.headers, key)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
+  await rememberCallerPhone(raw); // the call_started event is the only one that says who is calling
   let created = 0;
   try {
     for (const payload of await voiceProvider.parseWebhook(raw)) {

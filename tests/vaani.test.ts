@@ -107,6 +107,16 @@ describe("Vaani webhook", () => {
     expect(p.external_id).toBe("inbound-1784899978-aaaa1111");
   });
 
+  it("when the history is unavailable, the caller number comes from the earlier call_started event", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 500 })));
+    const post = (qs: string, body: string) => webhook(new Request(`http://x/api/vaani/webhook${qs}`, { method: "POST", body }));
+    await post("?key=s3cret", JSON.stringify({ event: "call_started", room_name: "inbound-1784899978-aaaa1111", status: "dialing", phone_number: "+91 98220 00111" }));
+    const r = await post("?key=s3cret", evt());
+    expect((await r.json()).created).toBe(1);
+    const c = (await db.select().from(schema.calls))[0];
+    expect(c.callerPhone).toBe("+919822000111");
+  });
+
   it("other events and outbound calls are ignored", async () => {
     stubVaani([historyCall()]);
     const a = new VaaniAdapter();
