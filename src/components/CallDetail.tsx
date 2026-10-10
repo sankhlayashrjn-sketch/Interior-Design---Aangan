@@ -38,7 +38,7 @@ export interface AssignPanel {
  * (handoff note, transcript, score, override, notes, timeline) is the same for both, so designers can audit it.
  */
 export function CallDetail({ detail, now = new Date(), assign }: { detail: Detail; now?: Date; assign?: AssignPanel }) {
-  const { call, assignedTo, assignedByName, acknowledgedByName, overrides, notes, timeline, linked } = detail;
+  const { call, assignedTo, assignedByName, bookingWith, acknowledgedByName, overrides, notes, timeline, linked } = detail;
   const due = fmtDue(call.dueAt, call.acknowledgedAt, now);
   const processed = call.status !== "yet_to_be_processed";
   const turns = splitTurns(call.transcript);
@@ -116,6 +116,7 @@ export function CallDetail({ detail, now = new Date(), assign }: { detail: Detai
             {call.bookedSlot ? (
               <p>
                 {fmtDateTime(call.bookedSlot)}
+                {bookingWith ? <span> · with {bookingWith}</span> : null}
                 {call.bookingStatus && call.bookingStatus !== "booked" ? <span className="text-mute"> · {call.bookingStatus}</span> : null}
                 {call.score !== null && (
                   <span className="text-mute">

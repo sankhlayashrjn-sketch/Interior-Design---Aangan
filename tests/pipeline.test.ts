@@ -3,6 +3,7 @@ import { count, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db, schema, one } from "@/db";
 import { applyCalEvent } from "@/lib/bookings";
+import { getDetail } from "@/lib/calls";
 import { ingestCall, processPending } from "@/lib/ingest";
 import { setAssigner, defaultAssigner } from "@/lib/assignment";
 import { verifyCalSignature } from "@/lib/bookings";
@@ -181,6 +182,7 @@ describe("bookings", () => {
     expect(c.bookingStatus).toBe("rescheduled");
     expect(c.bookedSlot!.toISOString()).toBe(istIso("2026-10-10 11:00"));
     expect((await one(db.select().from(schema.designers).where(eq(schema.designers.id, c.assignedDesignerId!))))!.name).toBe("Meera");
+    expect((await getDetail(call.id))!.bookingWith).toBe("Meera"); // the detail says who the consultation is with
 
     await applyCalEvent({ triggerEvent: "BOOKING_CANCELLED", payload: { uid: "bk2", startTime: istIso("2026-10-10 11:00") } });
     c = (await one(db.select().from(schema.calls).where(eq(schema.calls.id, call.id))))!;

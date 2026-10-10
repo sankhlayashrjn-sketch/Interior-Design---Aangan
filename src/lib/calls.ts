@@ -251,12 +251,16 @@ export async function getDetail(callId: number) {
   const name = (id: number | null) => designers.find((d) => d.id === id)?.name ?? null;
   const overrides = await db.select().from(schema.statusOverrides).where(eq(schema.statusOverrides.callId, callId)).orderBy(asc(schema.statusOverrides.at));
   const notes = await db.select().from(schema.callNotes).where(eq(schema.callNotes.callId, callId)).orderBy(asc(schema.callNotes.createdAt));
+  // Who the consultation is with: the Cal.com host if they are one of our designers, otherwise the host's email.
+  const booking = call.bookingId ? await one(db.select().from(schema.bookings).where(eq(schema.bookings.calcomUid, call.bookingId))) : undefined;
+  const bookingWith = booking ? (name(booking.hostDesignerId) ?? booking.hostEmail ?? null) : null;
   const linked = call.linkedCallId ? ((await getCall(call.linkedCallId)) ?? null) : null;
   return {
     call,
     assignedTo: name(call.assignedDesignerId),
     acknowledgedByName: name(call.acknowledgedBy),
     assignedByName: name(call.assignedBy),
+    bookingWith,
     overrides: overrides.map((o) => ({ ...o, byName: name(o.byDesignerId) })),
     notes: notes.map((n) => ({ ...n, byName: name(n.designerId) })),
     timeline: await timelineFor(call, name, overrides),
