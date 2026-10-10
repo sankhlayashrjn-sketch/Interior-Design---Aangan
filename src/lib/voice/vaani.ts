@@ -137,6 +137,14 @@ export async function rememberCallerPhone(rawBody: string): Promise<void> {
 
 const recallPhone = async (callId: string) => (await one(db.select().from(schema.appState).where(eq(schema.appState.key, phoneKey(callId)))))?.value ?? null;
 
+/** Milliseconds between the first and last "[hh:mm:ss]" marker in a transcript, or 0 if there are fewer than two. */
+export function spanFromTimestamps(transcript: string): number {
+  const marks = [...transcript.matchAll(/\[(\d{1,2}):(\d{2}):(\d{2})\]/g)].map((m) => ((Number(m[1]) * 60 + Number(m[2])) * 60 + Number(m[3])) * 1000);
+  if (marks.length < 2) return 0;
+  const span = marks[marks.length - 1] - marks[0];
+  return span >= 0 ? span : span + 86_400_000; // a call that crossed midnight
+}
+
 export class VaaniAdapter implements VoiceProvider {
   readonly name = "vaani";
 
@@ -176,7 +184,9 @@ export class VaaniAdapter implements VoiceProvider {
       /* fall back to what the event itself says */
     }
     if (record && !isInbound(record)) return []; // an outbound call is not an enquiry
-    const durationMs = Number(d.call_duration) || 0;
+    const rawTranscript = typeof d.transcript === "string" ? d.transcript : "";
+    // Some calls (browser test calls) arrive without a call_duration; the transcript's own timestamps still tell the length.
+    const durationMs = Number(d.call_duration) || spanFromTimestamps(rawTranscript);
     const ended = evt.timestamp ? new Date(evt.timestamp) : new Date();
     const fallback: VaaniHistoryCall = {
       call_id: callId,

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db, schema } from "@/db";
 import { env } from "@/lib/env";
 import { ingestCall } from "@/lib/ingest";
-import { normaliseTranscript, toPayload, VaaniAdapter } from "@/lib/voice/vaani";
+import { normaliseTranscript, spanFromTimestamps, toPayload, VaaniAdapter } from "@/lib/voice/vaani";
 import { pollVaani } from "@/lib/voice/poll";
 import { POST as webhook } from "@/app/api/vaani/webhook/route";
 import { payloadFor, resetDb, sample } from "./helpers";
@@ -115,6 +115,18 @@ describe("Vaani webhook", () => {
     expect((await r.json()).created).toBe(1);
     const c = (await db.select().from(schema.calls))[0];
     expect(c.callerPhone).toBe("+919822000111");
+  });
+
+  it("a call with no call_duration gets its length from the transcript timestamps", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 500 })));
+    const body = JSON.stringify({ event: "call_postprocessing", call_id: "webrtc-1", timestamp: "2026-10-09T05:40:00+00:00", data: { call_id: "webrtc-1", transcript: "[13:00:10] AGENT: Hi
+
+[13:01:40] USER: Hello
+
+[13:03:10] AGENT: Bye" } });
+    const [p] = await new VaaniAdapter().parseWebhook(body);
+    expect(p.duration_sec).toBe(180);
+    expect(spanFromTimestamps("no marks")).toBe(0);
   });
 
   it("other events and outbound calls are ignored", async () => {
