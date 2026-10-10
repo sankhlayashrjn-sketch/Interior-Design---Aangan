@@ -41,20 +41,24 @@ export async function openAs(formData: FormData) {
   redirect(`/call/${callId}`);
 }
 
-export async function acknowledgeAction(formData: FormData) {
-  const me = await currentDesigner();
+/**
+ * Acknowledge a call. It is always recorded for the designer the call is assigned to: the dashboard has no
+ * per-person login, so "who is viewing" is only a convenience and must not decide who is accountable.
+ */
+export async function acknowledgeAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const callId = Number(formData.get("callId"));
-  if (!me || !callId) return;
-  // A designer acknowledges their own call. Anyone else looking at the page (the demo's "viewing as") acts as its assignee.
+  if (!callId) return { error: "Call not found" };
   const call = await one(db.select().from(schema.calls).where(eq(schema.calls.id, callId)));
-  const by = me.role === "designer" ? me.id : call?.assignedDesignerId;
-  if (!by) return;
+  if (!call) return { error: "Call not found" };
+  if (!call.assignedDesignerId) return { error: "Assign this call to a designer first" };
   try {
-    await acknowledgeCall(callId, by);
+    await acknowledgeCall(callId, call.assignedDesignerId);
   } catch (e) {
-    if (!(e instanceof UserError)) throw e;
+    if (e instanceof UserError) return { error: e.message };
+    throw e;
   }
   revalidatePath("/", "layout");
+  return { ok: "Acknowledged" };
 }
 
 /** The front desk gives a call to a designer, or moves it to another designer before it is acknowledged. */

@@ -1,4 +1,4 @@
-import { acknowledgeAction } from "@/app/actions";
+import { AcknowledgeButton } from "@/components/AcknowledgeButton";
 import { AssignForm, type AssignOption } from "@/components/AssignForm";
 import { FlagChip, StatusChip } from "@/components/Chip";
 import { NoteForm } from "@/components/NoteForm";
@@ -81,12 +81,7 @@ export function CallDetail({ detail, now = new Date(), assign }: { detail: Detai
           {call.acknowledgedAt ? (
             <p className="text-mute">Acknowledged by {acknowledgedByName} · {due.text.replace("Acknowledged ", "")}</p>
           ) : (
-            <form action={acknowledgeAction}>
-              <input type="hidden" name="callId" value={call.id} />
-              <button type="submit" className="rounded bg-accent px-4 py-2 font-medium text-white">
-                Acknowledge
-              </button>
-            </form>
+            <AcknowledgeButton callId={call.id} />
           )}
           {!call.acknowledgedAt && <p className={due.state === "overdue" ? "font-medium text-accent" : "text-mute"}>{due.text}</p>}
         </div>
