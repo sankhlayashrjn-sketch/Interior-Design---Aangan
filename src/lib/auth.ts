@@ -18,6 +18,7 @@ export type AuthMode = "off" | "password" | "blocked";
 
 export function authMode(): AuthMode {
   if (env.APP_PASSWORD) return "password";
+  if (env.OPEN_ACCESS === "true") return "off"; // a deliberate choice, never a default
   return process.env.NODE_ENV === "production" ? "blocked" : "off";
 }
 

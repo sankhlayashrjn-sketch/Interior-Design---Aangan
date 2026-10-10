@@ -21,6 +21,8 @@ const schema = z.object({
   INGEST_API_KEY: z.string().default(""),
   CRON_SECRET: z.string().default(""),
   APP_PASSWORD: z.string().default(""),
+  /** "true" lets a production deployment run with no login at all. Anyone with the link can then see every call. */
+  OPEN_ACCESS: z.string().default(""),
   AUTH_SECRET: z.string().default(""),
   CALCOM_API_KEY: z.string().default(""),
   CALCOM_WEBHOOK_SECRET: z.string().default(""),
