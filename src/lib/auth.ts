@@ -23,7 +23,7 @@ export function authMode(): AuthMode {
 }
 
 /** Paths that do their own authentication (shared secret, signature or bearer token), so the login gate skips them. */
-export const PUBLIC_PATHS = ["/login", "/api/calls", "/api/bookings", "/api/telegram/webhook", "/api/cron/tick"];
+export const PUBLIC_PATHS = ["/login", "/api/calls", "/api/bookings", "/api/telegram/webhook", "/api/cron/tick", "/api/vaani/webhook"];
 
 export const isPublicPath = (pathname: string) => PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 

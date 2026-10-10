@@ -1,6 +1,7 @@
 import { audit } from "@/lib/audit";
 import { runHubSpotCycle } from "@/lib/hubspot/sync";
 import { processPending } from "@/lib/ingest";
+import { pollVaani } from "@/lib/voice/poll";
 import { reconcileReminders, runDueJobs } from "@/lib/reminders";
 
 export interface TickResult {
@@ -15,6 +16,7 @@ export interface TickResult {
  * Each part takes its own lease, so overlapping runs never send a reminder or create a deal twice.
  */
 export async function runTick(now: Date = new Date()): Promise<TickResult> {
+  await pollVaani(now); // poll mode only: pull in new inbound calls from Vaani
   const processed = await processPending(); // calls saved but never processed (crash, AI outage)
   await reconcileReminders(now); // processed calls that have no reminder yet
   const reminders = await runDueJobs(now);

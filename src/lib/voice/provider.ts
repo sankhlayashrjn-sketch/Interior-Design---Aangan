@@ -10,7 +10,7 @@ export interface VoiceProvider {
   readonly ingestMode: "webhook" | "poll";
 
   /** Webhook mode: verify the request is genuine (signature or shared secret). */
-  verifyWebhook(rawBody: string, headers: Headers): boolean;
+  verifyWebhook(rawBody: string, headers: Headers, urlKey?: string | null): boolean;
 
   /** Webhook mode: turn the vendor's event into zero or more payloads. */
   parseWebhook(rawBody: string): Promise<IngestPayload[]>;
