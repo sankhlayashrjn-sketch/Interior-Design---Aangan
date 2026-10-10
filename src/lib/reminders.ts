@@ -4,6 +4,7 @@ import { audit } from "@/lib/audit";
 import { on } from "@/lib/hooks";
 import { eligibleDesigners, suggestDesignerFor } from "@/lib/assignment";
 import { assignDigestMessage, assignedMessage, assignReminderMessage, bookingChangedMessage, digestMessage, slaMessage, slotMessage } from "@/lib/reminder-messages";
+import { env } from "@/lib/env";
 import { getSettings, hoursConfig } from "@/lib/settings";
 import { sendTelegram, type OutMessage } from "@/lib/telegram";
 import { addWorkingMinutes, isWorkingTime, planReminder } from "@/lib/working-hours";
@@ -134,8 +135,20 @@ async function founders(excludeId: number | null) {
   return (await db.select().from(schema.designers).where(eq(schema.designers.isEscalation, true))).filter((d) => d.id !== excludeId);
 }
 
-async function deliver(chatId: string | null, msg: OutMessage) {
-  return sendTelegram(chatId, msg);
+type Recipient = { id: number; name: string; role: string; telegramChatId: string | null };
+
+/**
+ * Send a message to a person. With TELEGRAM_REDIRECT_CHAT_ID set (one-phone testing) it goes to that chat instead,
+ * says who it is really for, and its buttons carry that person's id so a tap acts as them.
+ */
+async function deliver(to: Recipient, msg: OutMessage) {
+  const redirect = env.TELEGRAM_REDIRECT_CHAT_ID;
+  if (!redirect) return sendTelegram(to.telegramChatId, msg);
+  const label = `To: ${to.name} (${to.role === "front_desk" ? "front desk" : "designer"})`;
+  const rows = msg.rows?.map((row) => row.map((b) => (b.callbackData ? { ...b, callbackData: `${b.callbackData}:u${to.id}` } : b)));
+  return sendTelegram(redirect, { text: `${label}
+
+${msg.text}`, rows });
 }
 
 type Outcome = { state: "sent" | "cancelled"; note: string } | { retry: string };
@@ -150,12 +163,12 @@ async function execute(job: Job, now: Date): Promise<Outcome> {
     if (d.role === "front_desk") {
       const waiting = (await db.select().from(schema.calls).where(isNull(schema.calls.assignedDesignerId)).orderBy(asc(schema.calls.startedAt))).filter(needsAssigning);
       if (waiting.length === 0) return { state: "cancelled", note: "cancelled: nothing to assign" };
-      const r = await deliver(d.telegramChatId, assignDigestMessage(waiting, now));
+      const r = await deliver(d, assignDigestMessage(waiting, now));
       return r.ok ? { state: "sent", note: `sent: digest of ${waiting.length}` } : { retry: r.error ?? "send failed" };
     }
     const calls = await pendingFor(d.id);
     if (calls.length === 0) return { state: "cancelled", note: "cancelled: nothing pending" };
-    const r = await deliver(d.telegramChatId, digestMessage(calls, now));
+    const r = await deliver(d, digestMessage(calls, now));
     return r.ok ? { state: "sent", note: `sent: digest of ${calls.length}` } : { retry: r.error ?? "send failed" };
   }
 
@@ -167,12 +180,12 @@ async function execute(job: Job, now: Date): Promise<Outcome> {
   if (!forFrontDesk && call.assignedDesignerId !== d.id) return { state: "cancelled", note: "cancelled: reassigned" };
 
   if (job.kind === "assign") {
-    const r = await deliver(d.telegramChatId, assignReminderMessage(call, (await eligibleDesigners()).map((x) => ({ id: x.id, name: x.name })), now));
+    const r = await deliver(d, assignReminderMessage(call, (await eligibleDesigners()).map((x) => ({ id: x.id, name: x.name })), now));
     return r.ok ? { state: "sent", note: "sent" } : { retry: r.error ?? "send failed" };
   }
 
   if (job.kind === "sla") {
-    const r = await deliver(d.telegramChatId, slaMessage(call, now));
+    const r = await deliver(d, slaMessage(call, now));
     return r.ok ? { state: "sent", note: "sent" } : { retry: r.error ?? "send failed" };
   }
 
@@ -180,9 +193,9 @@ async function execute(job: Job, now: Date): Promise<Outcome> {
   if (!call.bookedSlot || call.bookingStatus === "cancelled") return { state: "cancelled", note: "cancelled: no active booking" };
   const minutes = Math.round((call.bookedSlot.getTime() - now.getTime()) / 60_000);
   if (minutes < 0) return { state: "cancelled", note: "cancelled: slot already started" };
-  const r = await deliver(d.telegramChatId, slotMessage(call, Math.max(minutes, 0), now));
+  const r = await deliver(d, slotMessage(call, Math.max(minutes, 0), now));
   if (!r.ok) return { retry: r.error ?? "send failed" };
-  for (const f of await founders(d.id)) await deliver(f.telegramChatId, slotMessage(call, Math.max(minutes, 0), now, d.name));
+  for (const f of await founders(d.id)) await deliver(f, slotMessage(call, Math.max(minutes, 0), now, d.name));
   return { state: "sent", note: "sent: recipient and founder" };
 }
 
@@ -248,7 +261,7 @@ export function registerReminderHandlers() {
     const d = await designer(call?.assignedDesignerId ?? null);
     if (!call || !d || call.acknowledgedAt) return;
     const by = await designer(call.assignedBy);
-    await deliver(d.telegramChatId, assignedMessage(call, new Date(), by?.name ?? null));
+    await deliver(d, assignedMessage(call, new Date(), by?.name ?? null));
   });
   on("settings.changed", async () => void (await rescheduleAll()));
   on("booking.changed", async ({ callId, kind }) => {
@@ -257,6 +270,6 @@ export function registerReminderHandlers() {
     const call = await getCall(callId);
     if (!call) return;
     const recipients = call.assignedDesignerId ? [await designer(call.assignedDesignerId)] : needsAssigning(call) ? await frontDesk() : [];
-    for (const d of recipients) if (d) await deliver(d.telegramChatId, bookingChangedMessage(call, kind, new Date()));
+    for (const d of recipients) if (d) await deliver(d, bookingChangedMessage(call, kind, new Date()));
   });
 }

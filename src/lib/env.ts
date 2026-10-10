@@ -38,6 +38,8 @@ const schema = z.object({
   HUBSPOT_PORTAL_ID: z.string().default(""),
   TELEGRAM_BOT_TOKEN: z.string().default(""),
   TELEGRAM_WEBHOOK_SECRET: z.string().default(""),
+  /** Testing with one phone: every reminder goes to this chat, labelled with who it is really for, and taps from it act as that person. Leave empty in real use. */
+  TELEGRAM_REDIRECT_CHAT_ID: z.string().default(""),
   VAANI_API_KEY: z.string().default(""),
   VAANI_AGENT_ID: z.string().default(""),
   VAANI_BASE_URL: z.string().default(""),

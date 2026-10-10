@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db, one, schema } from "@/db";
 import { acknowledgeCall, assignCall, UserError } from "@/lib/calls";
+import { env } from "@/lib/env";
 import { answerCallback, clearButtons, reply } from "@/lib/telegram";
 
 const CODE_TTL_MS = 48 * 3_600_000;
@@ -42,10 +43,13 @@ async function onStart(chatId: number, text: string, now: Date) {
 
 async function onCallback(q: NonNullable<TgUpdate["callback_query"]>) {
   const chatId = q.message?.chat.id;
-  const ack = /^ack:(\d+)$/.exec(q.data ?? "");
-  const asg = /^asg:(\d+):(\d+)$/.exec(q.data ?? "");
+  const ack = /^ack:(\d+)(?::u(\d+))?$/.exec(q.data ?? "");
+  const asg = /^asg:(\d+):(\d+)(?::u(\d+))?$/.exec(q.data ?? "");
   if (!chatId || (!ack && !asg)) return answerCallback(q.id, "Unknown action");
-  const d = await designerByChat(chatId);
+  // One-phone testing: a tap from the redirect chat acts as the person the message was addressed to.
+  const actAs = Number((asg ? asg[3] : ack![2]) ?? 0) || null;
+  const redirected = !!env.TELEGRAM_REDIRECT_CHAT_ID && String(chatId) === env.TELEGRAM_REDIRECT_CHAT_ID && !!actAs;
+  const d = redirected ? await one(db.select().from(schema.designers).where(eq(schema.designers.id, actAs!))) : await designerByChat(chatId);
   if (!d) return answerCallback(q.id, "This chat is not linked to anyone");
   let done = "Acknowledged";
   try {
@@ -71,5 +75,6 @@ async function onCallback(q: NonNullable<TgUpdate["callback_query"]>) {
 export async function handleUpdate(update: TgUpdate, now: Date = new Date()): Promise<void> {
   const text = update.message?.text?.trim();
   if (update.message && text && /^\/start(@\w+)?(\s|$)/.test(text)) return onStart(update.message.chat.id, text.replace(/^\/start@\w+/, "/start"), now);
+  if (update.message && text && /^\/id(@\w+)?$/.test(text)) return reply(String(update.message.chat.id), `Your chat ID is ${update.message.chat.id}`);
   if (update.callback_query) return onCallback(update.callback_query);
 }

@@ -4,6 +4,7 @@ import { db, one, schema } from "@/db";
 import { suggestDesignerFor } from "@/lib/assignment";
 import { acknowledgeCall, assignCall, countsForFrontDesk, listForDesigner, listForFrontDesk, todayForFrontDesk, UserError } from "@/lib/calls";
 import { updateDesigner } from "@/lib/designers";
+import { env } from "@/lib/env";
 import { ingestCall } from "@/lib/ingest";
 import { runDueJobs } from "@/lib/reminders";
 import { saveSettings } from "@/lib/settings";
@@ -255,5 +256,49 @@ describe("roles", () => {
     const t = await todayForFrontDesk(at("2026-10-07 11:30"));
     expect(t.toAssign).toBe(2);
     expect(t.overdue).toBe(1); // the 09:30 call was due 10:30
+  });
+});
+
+describe("one-phone testing (TELEGRAM_REDIRECT_CHAT_ID)", () => {
+  afterEach(() => {
+    env.TELEGRAM_REDIRECT_CHAT_ID = "";
+  });
+
+  it("sends every reminder to the one chat, says who it is for, and taps act as that person", async () => {
+    env.TELEGRAM_REDIRECT_CHAT_ID = "77777";
+    const c = await call("T01", "2026-10-07 11:00");
+    await runDueJobs(at("2026-10-07 12:00"));
+    const out = (await sends()).filter((s) => s.chatId);
+    expect(out.length).toBeGreaterThan(0);
+    expect(out.every((s) => s.chatId === "77777")).toBe(true);
+    const forIsha = out.find((s) => s.text.startsWith("To: Isha (front desk)"))!;
+    expect(forIsha).toBeTruthy();
+    const button = forIsha.buttons.flat().find((b) => b.callback_data?.startsWith(`asg:${c.id}:${MEERA}`))!;
+    expect(button.callback_data).toBe(`asg:${c.id}:${MEERA}:u${ISHA}`);
+
+    // Tapping it from the test chat assigns the call as Isha, even though that chat is not linked to Isha.
+    await handleUpdate({ callback_query: { id: "cb", data: button.callback_data, message: { message_id: 1, chat: { id: 77777 } } } });
+    const after = await callById(c.id);
+    expect(after.assignedDesignerId).toBe(MEERA);
+    expect(after.assignedBy).toBe(ISHA);
+
+    // The designer's message arrives in the same chat, addressed to Meera, and Acknowledge acts as Meera.
+    const toMeera = (await sends()).find((s) => s.text.startsWith("To: Meera (designer)"))!;
+    const ack = toMeera.buttons.flat().find((b) => b.callback_data?.startsWith("ack:"))!;
+    expect(ack.callback_data).toBe(`ack:${c.id}:u${MEERA}`);
+    await handleUpdate({ callback_query: { id: "cb2", data: ack.callback_data, message: { message_id: 2, chat: { id: 77777 } } } });
+    expect((await callById(c.id)).acknowledgedBy).toBe(MEERA);
+  });
+
+  it("taps from other chats cannot borrow someone else's identity", async () => {
+    env.TELEGRAM_REDIRECT_CHAT_ID = "77777";
+    const c = await call("T01", "2026-10-07 11:00");
+    await handleUpdate({ callback_query: { id: "cb", data: `asg:${c.id}:${MEERA}:u${ISHA}`, message: { message_id: 1, chat: { id: 4242 } } } });
+    expect((await callById(c.id)).assignedDesignerId).toBeNull();
+  });
+
+  it("/id tells you your chat id", async () => {
+    await handleUpdate({ message: { text: "/id", chat: { id: 5551234 } } });
+    expect((await sends()).some((s) => /5551234/.test(s.text))).toBe(true);
   });
 });
