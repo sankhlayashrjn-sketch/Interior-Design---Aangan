@@ -183,6 +183,8 @@ describe("bookings", () => {
     expect(c.bookedSlot!.toISOString()).toBe(istIso("2026-10-10 11:00"));
     expect((await one(db.select().from(schema.designers).where(eq(schema.designers.id, c.assignedDesignerId!))))!.name).toBe("Meera");
     expect((await getDetail(call.id))!.bookingWith).toBe("Meera"); // the detail says who the consultation is with
+    await db.update(schema.calls).set({ acknowledgedBy: 3, acknowledgedAt: new Date() }).where(eq(schema.calls.id, call.id));
+    expect((await getDetail(call.id))!.bookingWith).toBe("Rohan"); // whoever acknowledged the call takes the consultation
 
     await applyCalEvent({ triggerEvent: "BOOKING_CANCELLED", payload: { uid: "bk2", startTime: istIso("2026-10-10 11:00") } });
     c = (await one(db.select().from(schema.calls).where(eq(schema.calls.id, call.id))))!;
