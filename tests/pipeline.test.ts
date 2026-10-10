@@ -205,6 +205,27 @@ describe("bookings", () => {
     expect(c.bookedSlot!.toISOString()).toBe(istIso("2026-10-12 12:00"));
   });
 
+  it("an email-only booking (no phone) is matched to the call it was made during, in either order", async () => {
+    // Booking first, call lands afterwards (the usual order: the call is saved when it ends).
+    await applyCalEvent({ triggerEvent: "BOOKING_CREATED", payload: { uid: "em1", startTime: istIso("2026-10-12 12:00"), attendees: [{ email: "p@example.com" }], organizer: { email: "aryan@aangan.test" } } });
+    const { call } = await ingestCall(payloadFor("T01", { started_at: new Date(Date.now() - 4 * 60_000).toISOString(), duration_sec: 300 }));
+    const c = (await one(db.select().from(schema.calls).where(eq(schema.calls.id, call.id))))!;
+    expect(c.bookingId).toBe("em1");
+    expect(c.bookedSlot!.toISOString()).toBe(istIso("2026-10-12 12:00"));
+
+    // Call first, booking afterwards.
+    const { call: second } = await ingestCall(payloadFor("T02", { started_at: new Date(Date.now() - 2 * 60_000).toISOString(), duration_sec: 120 }));
+    await applyCalEvent({ triggerEvent: "BOOKING_CREATED", payload: { uid: "em2", startTime: istIso("2026-10-12 13:00"), attendees: [{ email: "q@example.com" }] } });
+    const d = (await one(db.select().from(schema.calls).where(eq(schema.calls.id, second.id))))!;
+    expect(d.bookingId).toBe("em2");
+  });
+
+  it("an email-only booking made long before or after a call is NOT attached to it", async () => {
+    await applyCalEvent({ triggerEvent: "BOOKING_CREATED", payload: { uid: "em3", startTime: istIso("2026-10-12 12:00"), attendees: [{ email: "r@example.com" }] } });
+    const { call } = await ingestCall(payloadFor("T01", { started_at: new Date(Date.now() - 2 * 3_600_000).toISOString(), duration_sec: 200 }));
+    expect((await one(db.select().from(schema.calls).where(eq(schema.calls.id, call.id))))!.bookingId).toBeNull();
+  });
+
   it("a booking that arrives before its call is linked by phone when the call lands", async () => {
     await applyCalEvent({
       triggerEvent: "BOOKING_CREATED",

@@ -128,6 +128,14 @@ async function attachBookingFromPayload(call: Call, payload: IngestPayload) {
     );
   }
 
+  // A booking made with an email and no phone number can only be matched by timing: made during this call (or just after).
+  if (!booking) {
+    const from = call.startedAt.getTime() - 5 * 60_000;
+    const to = call.startedAt.getTime() + call.durationSec * 1000 + 15 * 60_000;
+    const orphans = await db.select().from(schema.bookings).where(and(isNull(schema.bookings.callId), isNull(schema.bookings.attendeePhone)));
+    booking = orphans.filter((b) => b.createdAt.getTime() >= from && b.createdAt.getTime() <= to).sort((x, y) => Math.abs(x.createdAt.getTime() - call.startedAt.getTime()) - Math.abs(y.createdAt.getTime() - call.startedAt.getTime()))[0];
+  }
+
   if (!booking && payload.booked_slot) {
     const uid = payload.booking_id ?? `mock-${payload.external_id}`;
     booking = await one(

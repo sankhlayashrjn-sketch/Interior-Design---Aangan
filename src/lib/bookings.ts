@@ -121,6 +121,13 @@ export async function applyCalEvent(evt: CalWebhook): Promise<BookingOutcome> {
     );
   }
 
+  // No phone number on the booking (email only): match the call it was made during, or just after.
+  if (!call && !booking.attendeePhone) {
+    const recent = await db.select().from(schema.calls).where(gte(schema.calls.startedAt, new Date(Date.now() - 3 * 3_600_000))).orderBy(desc(schema.calls.startedAt));
+    const t = booking.createdAt.getTime();
+    call = recent.find((c) => (!c.bookingId || c.bookingStatus === "cancelled") && t >= c.startedAt.getTime() - 5 * 60_000 && t <= c.startedAt.getTime() + c.durationSec * 1000 + 15 * 60_000);
+  }
+
   if (!call) {
     await audit("booking.orphan", { uid: p.uid, kind }); // the call may not have been ingested yet; it will link on arrival
     return { callId: null, kind };
