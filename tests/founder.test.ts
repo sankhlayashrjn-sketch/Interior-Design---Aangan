@@ -30,9 +30,9 @@ async function scenario() {
   const C = await call("T06", "2026-10-08 21:00", { booking_id: "bk", booked_slot: istIso("2026-10-12 11:00") });
   const D = await call("T03", "2026-10-09 10:00");
   const E = await call("T07", "2026-10-09 11:30");
-  await acknowledgeCall(A.id, 1, at("2026-10-07 11:30"));
-  await acknowledgeCall(B.id, 1, at("2026-10-09 09:45"));
-  await acknowledgeCall(C.id, 1, at("2026-10-09 09:10"));
+  await acknowledgeCall(A.id, A.assignedDesignerId!, at("2026-10-07 11:30"));
+  await acknowledgeCall(B.id, B.assignedDesignerId!, at("2026-10-09 09:45"));
+  await acknowledgeCall(C.id, C.assignedDesignerId!, at("2026-10-09 09:10"));
   return { A, B, C, D, E };
 }
 

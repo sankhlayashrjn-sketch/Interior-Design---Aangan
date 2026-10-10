@@ -231,6 +231,16 @@ describe("assign from Telegram", () => {
     expect((await callById(c.id)).assignedDesignerId).toBeNull();
   });
 
+  it("a designer the call was moved away from cannot acknowledge it from their old message", async () => {
+    const c = await call("T01", "2026-10-07 11:00");
+    await assignCall(c.id, ARYAN, { id: ISHA, how: "front_desk" });
+    await assignCall(c.id, MEERA, { id: ISHA, how: "front_desk" });
+    await tap(111, `ack:${c.id}`); // Aryan taps Acknowledge on the stale message
+    expect((await callById(c.id)).acknowledgedAt).toBeNull();
+    await tap(222, `ack:${c.id}`);
+    expect((await callById(c.id)).acknowledgedBy).toBe(MEERA);
+  });
+
   it("front desk officers cannot acknowledge on a designer's behalf", async () => {
     const c = await call("T01", "2026-10-07 11:00");
     await assignCall(c.id, ARYAN, { id: ISHA, how: "front_desk" });

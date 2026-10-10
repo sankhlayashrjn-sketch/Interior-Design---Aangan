@@ -58,14 +58,17 @@ describe("two servers at the same moment", () => {
     expect(await costRows()).toHaveLength(0);
   });
 
-  it("two people acknowledging together: one wins, and only one announcement goes out", async () => {
+  it("the assignee acknowledging from two devices at once: one wins, only one announcement goes out, and nobody else can", async () => {
     const { call } = await ingestCall(payloadFor("T01"));
     const seen: number[] = [];
     on("call.acknowledged", ({ callId }) => void seen.push(callId));
-    await Promise.all([acknowledgeCall(call.id, 1, at("2026-10-07 11:20")), acknowledgeCall(call.id, 2, at("2026-10-07 11:21"))]);
+    const me = call.assignedDesignerId!;
+    const other = me === 1 ? 2 : 1;
+    await expect(acknowledgeCall(call.id, other, at("2026-10-07 11:19"))).rejects.toThrow(/assigned to/);
+    await Promise.all([acknowledgeCall(call.id, me, at("2026-10-07 11:20")), acknowledgeCall(call.id, me, at("2026-10-07 11:21"))]);
     expect(seen).toHaveLength(1);
     const row = (await one(db.select().from(schema.calls).where(eq(schema.calls.id, call.id))))!;
-    expect([1, 2]).toContain(row.acknowledgedBy);
+    expect(row.acknowledgedBy).toBe(me);
   });
 
   it("two reminder runs at once send each reminder once", async () => {

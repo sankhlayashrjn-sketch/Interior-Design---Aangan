@@ -15,7 +15,8 @@ export class UserError extends Error {}
 const getCall = (id: number) => one(db.select().from(schema.calls).where(eq(schema.calls.id, id)));
 
 /**
- * A designer confirms they have read and understood the handoff. Idempotent: the first
+ * The designer a call is assigned to confirms they have read and understood the handoff. Nobody else can: an
+ * unassigned call has no one to acknowledge it, and a call that was moved to someone else is theirs now. Idempotent: the first
  * acknowledgement wins and later ones change nothing. Emits an event so reminders are cancelled
  * and HubSpot is updated.
  */
@@ -24,12 +25,17 @@ export async function acknowledgeCall(callId: number, designerId: number, now: D
   if (!call) throw new UserError("Call not found");
   if (call.status === "yet_to_be_processed") throw new UserError("This call is still being processed");
   if (call.acknowledgedAt) return call;
+  if (!call.assignedDesignerId) throw new UserError("This call has not been assigned to a designer yet");
+  if (call.assignedDesignerId !== designerId) {
+    const owner = await one(db.select().from(schema.designers).where(eq(schema.designers.id, call.assignedDesignerId)));
+    throw new UserError(`This call is assigned to ${owner?.name ?? "another designer"}, so only they can acknowledge it`);
+  }
 
   // The condition makes this safe if two people tap at once: only one UPDATE matches, and only that one announces it.
   const won = await db
     .update(schema.calls)
     .set({ acknowledgedAt: now, acknowledgedBy: designerId })
-    .where(and(eq(schema.calls.id, callId), isNull(schema.calls.acknowledgedAt)))
+      .where(and(eq(schema.calls.id, callId), isNull(schema.calls.acknowledgedAt), eq(schema.calls.assignedDesignerId, designerId)))
     .returning({ id: schema.calls.id });
   if (won.length > 0) await emit("call.acknowledged", { callId });
   return (await getCall(callId))!;
