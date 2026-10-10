@@ -37,16 +37,18 @@ Your Neon project is in **us-east-2** (Ohio). `vercel.json` pins the functions t
 ## 2. Vercel project
 
 1. Import the GitHub repository into Vercel. The framework is detected as Next.js. The build runs `npm run vercel-build`, which applies the database migrations and then builds.
-2. Add environment variables (Settings, Environment Variables). Set **Production** and **Preview** separately.
+2. Add environment variables (Settings, Environment Variables). Fastest: copy the values from your local git-ignored `.env.vercel` (it is built from `.env` and `.env.neon`, with fresh random secrets) and paste them into the first box, which accepts a whole `KEY=value` file. Set `APP_BASE_URL` to your real address. Set **Production** and **Preview** separately.
 
 | Variable | Production | Notes |
 |---|---|---|
 | `DATABASE_URL` | Neon production pooled string | Preview: the `preview` branch string |
+| `DATABASE_URL_UNPOOLED` | Neon direct (non-pooled) string | Used by the build to apply migrations |
+| `AUTH_SECRET` | a long random string | Signs the login cookie |
 | `APP_BASE_URL` | `https://<your-project>.vercel.app` | Must be https. Used in Telegram messages and the HubSpot link |
 | `APP_PASSWORD` | a long password | **Required.** Without it the app locks itself |
 | `CRON_SECRET` | a long random string | **Required.** Vercel sends it to the cron route automatically |
 | `INGEST_API_KEY` | a long random string | **Required.** Vaani sends it as header `x-api-key` |
-| `AI_MODE`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` | live, key, model | Or `mock` to try it out |
+| `AI_MODE`, `AI_PROVIDER`, `GEMINI_API_KEY`, `GEMINI_MODEL` | live, gemini, key, gemini-3.8-flash | Or `AI_PROVIDER=anthropic` with `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL`; or `mock` to try it out |
 | `HUBSPOT_MODE`, `HUBSPOT_TOKEN`, `HUBSPOT_PORTAL_ID` | live, key, id | See [HUBSPOT.md](HUBSPOT.md) |
 | `TELEGRAM_MODE`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET` | live, token, a random string | |
 | `CALCOM_MODE`, `CALCOM_WEBHOOK_SECRET` | when you use Cal.com | |
