@@ -1,4 +1,4 @@
-import type { CallRow } from "@/components/neu/CallTable";
+import type { CallRow } from "@/components/dash/CallTable";
 import type { Call } from "@/lib/calls";
 import { fmtWhen } from "@/lib/format";
 

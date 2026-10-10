@@ -17,8 +17,8 @@ export function TrendChart({ days }: { days: TrendDay[] }) {
           const other = d.total - d.qualified;
           return (
             <div key={d.date} className="flex h-full flex-1 flex-col justify-end" title={`${d.label}: ${d.total} ${d.total === 1 ? "call" : "calls"}, ${d.qualified} qualified`}>
-              {other > 0 && <div className="bg-[#c9c9c5]" style={{ height: `${(other / max) * 100}%` }} />}
-              {d.qualified > 0 && <div className="bg-ink" style={{ height: `${(d.qualified / max) * 100}%` }} />}
+              {other > 0 && <div className="bg-[#454b53]" style={{ height: `${(other / max) * 100}%` }} />}
+              {d.qualified > 0 && <div className="bg-accent" style={{ height: `${(d.qualified / max) * 100}%` }} />}
             </div>
           );
         })}
@@ -32,10 +32,10 @@ export function TrendChart({ days }: { days: TrendDay[] }) {
       </div>
       <figcaption className="mt-2 flex flex-wrap gap-x-5 text-small text-mute">
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2.5 w-2.5 bg-ink" /> Qualified
+          <span className="inline-block h-2.5 w-2.5 bg-accent" /> Qualified
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-2.5 w-2.5 bg-[#c9c9c5]" /> Other calls
+          <span className="inline-block h-2.5 w-2.5 bg-[#454b53]" /> Other calls
         </span>
         <span>Busiest day: {Math.max(...days.map((d) => d.total))}</span>
       </figcaption>
@@ -75,8 +75,8 @@ export function FunnelList({ steps }: { steps: FunnelStep[] }) {
           <span className="text-right tabular-nums sm:text-left">
             <span className="font-medium">{s.count}</span> <span className="text-small text-mute">{s.pct === null ? "" : `${s.pct}%`}</span>
           </span>
-          <span className="col-span-2 h-1.5 bg-[#ececea] sm:col-span-1" aria-hidden="true">
-            <span className="block h-full bg-ink" style={{ width: `${s.pct ?? 0}%` }} />
+          <span className="col-span-2 h-1.5 bg-well sm:col-span-1" aria-hidden="true">
+            <span className="block h-full bg-accent" style={{ width: `${s.pct ?? 0}%` }} />
           </span>
         </li>
       ))}

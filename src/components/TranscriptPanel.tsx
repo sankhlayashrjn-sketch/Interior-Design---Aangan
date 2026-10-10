@@ -3,7 +3,7 @@
 import { Button } from "antd";
 import { useActionState } from "react";
 import { refreshTranscriptAction, type ActionState } from "@/app/actions";
-import { N } from "@/components/neu/theme";
+import { N } from "@/components/dash/theme";
 import type { Turn } from "@/lib/guardrail";
 
 /**
@@ -48,8 +48,8 @@ export function TranscriptPanel({ callId, turns, recordingUrl, followsEarlier }:
         <ol className="max-h-[460px] space-y-2 overflow-y-auto p-2" tabIndex={0} aria-label="Conversation">
           {turns.map((t, i) => (
             <li key={i} className={`flex ${t.speaker === "agent" ? "justify-start" : "justify-end"}`}>
-              <div className={`max-w-[85%] px-4 py-2.5 ${t.speaker === "agent" ? "n-card-sm" : "n-inset-sm"}`}>
-                <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: t.speaker === "agent" ? N.accent : N.good }}>
+              <div className="max-w-[85%] rounded-2xl px-4 py-2.5" style={t.speaker === "agent" ? { background: N.panel2, border: `1px solid ${N.line}` } : { background: "rgba(25,195,125,0.14)", border: "1px solid rgba(25,195,125,0.35)" }}>
+                <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: t.speaker === "agent" ? N.mute : N.good }}>
                   {t.speaker === "agent" ? "Agent" : "Caller"}
                 </div>
                 <div>{t.text}</div>

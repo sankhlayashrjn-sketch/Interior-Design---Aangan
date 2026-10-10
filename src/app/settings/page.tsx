@@ -1,5 +1,5 @@
 import { asc } from "drizzle-orm";
-import { PageBanner } from "@/components/neu/PageBanner";
+import { PageBanner } from "@/components/dash/PageBanner";
 import { db, schema } from "@/db";
 import { AddDesignerForm, DesignerRow, SettingsForm } from "@/components/SettingsForms";
 import { integrationStatus } from "@/lib/env";

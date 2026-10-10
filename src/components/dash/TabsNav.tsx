@@ -10,11 +10,11 @@ export interface TabItem {
   href: string;
 }
 
-/** The list switcher: a pressed-in track with a raised thumb. Choosing one navigates, so every view has its own address. */
+/** The list switcher: a dark track with the chosen tab filled in green. Choosing one navigates, so every view has its own address. */
 export function TabsNav({ tabs, active }: { tabs: TabItem[]; active: string }) {
   const router = useRouter();
   return (
-    <div className="mb-5 overflow-x-auto pb-1" role="tablist" aria-label="Call lists">
+    <div className="mb-4 overflow-x-auto pb-1" role="tablist" aria-label="Call lists">
       <Segmented
         className="n-tabs"
         value={active}
@@ -23,7 +23,7 @@ export function TabsNav({ tabs, active }: { tabs: TabItem[]; active: string }) {
           value: t.key,
           label: (
             <span className="whitespace-nowrap px-2 py-1 text-[14px] font-semibold">
-              {t.label} <span className="ml-1 rounded-full px-2 py-0.5 text-[12px] font-bold text-mute" style={{ boxShadow: "inset 2px 2px 4px #b9c1d1, inset -2px -2px 4px #ffffff" }}>{t.count}</span>
+              {t.label} <span className="ml-1 rounded-md px-1.5 py-0.5 text-[12px] font-bold" style={{ background: t.key === active ? "rgba(4,23,14,0.18)" : "rgba(255,255,255,0.08)" }}>{t.count}</span>
             </span>
           ),
         }))}

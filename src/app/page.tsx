@@ -1,10 +1,10 @@
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { CallDetail } from "@/components/CallDetail";
 import { FilterBar, type Filters } from "@/components/FilterBar";
-import { CallTable } from "@/components/neu/CallTable";
-import { PageBanner } from "@/components/neu/PageBanner";
-import { StatStrip } from "@/components/neu/StatStrip";
-import { TabsNav } from "@/components/neu/TabsNav";
+import { CallTable } from "@/components/dash/CallTable";
+import { PageBanner } from "@/components/dash/PageBanner";
+import { StatStrip } from "@/components/dash/StatStrip";
+import { TabsNav } from "@/components/dash/TabsNav";
 import { eligibleDesigners, suggestDesignerFor, workloads } from "@/lib/assignment";
 import { activeDesigners, countsForFrontDesk, getDetail, listForFrontDesk, todayForFrontDesk, type FrontDeskTab, type SortKey } from "@/lib/calls";
 import { fmtDue } from "@/lib/format";
@@ -83,9 +83,9 @@ export default async function FrontDesk({ searchParams }: { searchParams: Promis
 
       <StatStrip
         stats={[
-          { label: "Overdue", value: today.overdue, tone: "pink", href: "/?tab=assign&overdue=1", hot: true },
-          { label: "Booked, not assigned", value: today.bookedToday, tone: "yellow", href: "/?tab=assign&booked=1" },
-          { label: "Came in after hours", value: today.afterHours, tone: "teal", href: "/?tab=assign&afterHours=1" },
+          { label: "Overdue", value: today.overdue, tone: "pink", href: "/?tab=assign&overdue=1", hot: true, hint: today.overdue ? "past the deadline" : "all on time" },
+          { label: "Booked, not assigned", value: today.bookedToday, tone: "yellow", href: "/?tab=assign&booked=1", hint: today.bookedToday ? "needs a designer" : "none" },
+          { label: "Came in after hours", value: today.afterHours, tone: "teal", href: "/?tab=assign&afterHours=1", hint: today.afterHours ? "night calls" : "none" },
         ]}
       />
 

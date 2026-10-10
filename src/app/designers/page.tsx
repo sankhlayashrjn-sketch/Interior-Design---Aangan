@@ -2,10 +2,10 @@ import Link from "next/link";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { CallDetail } from "@/components/CallDetail";
 import { FilterBar, type Filters } from "@/components/FilterBar";
-import { CallTable } from "@/components/neu/CallTable";
-import { PageBanner } from "@/components/neu/PageBanner";
-import { StatStrip } from "@/components/neu/StatStrip";
-import { TabsNav } from "@/components/neu/TabsNav";
+import { CallTable } from "@/components/dash/CallTable";
+import { PageBanner } from "@/components/dash/PageBanner";
+import { StatStrip } from "@/components/dash/StatStrip";
+import { TabsNav } from "@/components/dash/TabsNav";
 import { activeDesigners, countsForDesigner, getDetail, listForDesigner, todayForDesigner, type SortKey, type Tab } from "@/lib/calls";
 import { fmtDue } from "@/lib/format";
 import { toRow } from "@/lib/rows";
@@ -86,7 +86,7 @@ export default async function Designers({ searchParams }: { searchParams: Promis
               key={d.id}
               href={`/designers?who=${d.id}&tab=${tab}`}
               aria-current={on ? "true" : undefined}
-              className={`rounded-full px-5 py-2 text-small font-semibold text-ink no-underline ${on ? "n-inset-sm" : "n-card-sm"}`}
+              className={`rounded-full px-5 py-2 text-small font-semibold text-ink no-underline ${on ? "d-pill-on" : "n-card-sm"}`}
             >
               {d.name}
             </Link>
@@ -96,10 +96,10 @@ export default async function Designers({ searchParams }: { searchParams: Promis
 
       <StatStrip
         stats={[
-          { label: "Overdue", value: today.overdue, tone: "pink", href: href({ tab: "pending", overdue: "1", open: "" }), hot: true },
-          { label: "Due within the hour", value: today.dueSoon, tone: "yellow" },
-          { label: "Booked today", value: today.bookedToday, tone: "teal", href: href({ tab: "all", booked: "1", open: "" }) },
-          { label: "Waiting from after hours", value: today.afterHoursWaiting, tone: "blue", href: href({ tab: "pending", afterHours: "1", open: "" }) },
+          { label: "Overdue", value: today.overdue, tone: "pink", href: href({ tab: "pending", overdue: "1", open: "" }), hot: true, hint: today.overdue ? "past the deadline" : "all on time" },
+          { label: "Due within the hour", value: today.dueSoon, tone: "yellow", hint: today.dueSoon ? "act soon" : "none" },
+          { label: "Booked today", value: today.bookedToday, tone: "teal", href: href({ tab: "all", booked: "1", open: "" }), hint: today.bookedToday ? "consultations" : "none" },
+          { label: "Waiting from after hours", value: today.afterHoursWaiting, tone: "blue", href: href({ tab: "pending", afterHours: "1", open: "" }), hint: today.afterHoursWaiting ? "from the night" : "none" },
         ]}
       />
 

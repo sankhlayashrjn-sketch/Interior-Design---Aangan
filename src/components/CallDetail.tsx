@@ -7,7 +7,7 @@ import { FlagChip, StatusChip } from "@/components/Chip";
 import { NoteForm } from "@/components/NoteForm";
 import { OverrideForm } from "@/components/OverrideForm";
 import { TranscriptPanel } from "@/components/TranscriptPanel";
-import { N } from "@/components/neu/theme";
+import { N } from "@/components/dash/theme";
 import type { getDetail } from "@/lib/calls";
 import { fmtDateTime, fmtDue, PROPERTY_LABEL } from "@/lib/format";
 import { splitTurns } from "@/lib/guardrail";
@@ -139,8 +139,8 @@ export function CallDetail({ detail, now = new Date(), assign }: { detail: Detai
         <ol className="space-y-3">
           {timeline.map((e, i) => (
             <li key={i} className="flex items-start gap-3">
-              <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full" style={{ boxShadow: "inset 2px 2px 4px #b9c1d1, inset -2px -2px 4px #ffffff" }}>
-                <span className="block h-2 w-2 rounded-full" style={{ background: [N.accent, N.warn, N.good, N.info][i % 4] }} />
+              <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-well">
+                <span className="block h-2 w-2 rounded-full" style={{ background: [N.accent, N.warn, N.info, N.good][i % 4] }} />
               </span>
               <span>
                 <span className="text-small font-semibold" style={dim}>
@@ -198,13 +198,13 @@ export function CallDetail({ detail, now = new Date(), assign }: { detail: Detai
               </header>
 
       {canAssign && (
-        <div className="n-card-sm p-5">
+        <div className="d-accent-card p-5">
           <AssignForm callId={call.id} designers={assign!.designers} suggestedId={assign!.suggestedId} currentId={call.assignedDesignerId} />
         </div>
       )}
 
       {canAcknowledge && (
-        <div className="n-card-sm flex flex-wrap items-center gap-4 p-5">
+        <div className={call.acknowledgedAt ? "n-card-sm flex flex-wrap items-center gap-4 p-5" : "d-accent-card flex flex-wrap items-center gap-4 p-5"}>
           {call.acknowledgedAt ? (
             <p className="font-bold" style={{ color: N.good }}>
               Acknowledged by {acknowledgedByName} · {due.text.replace("Acknowledged ", "")}
@@ -212,7 +212,7 @@ export function CallDetail({ detail, now = new Date(), assign }: { detail: Detai
           ) : (
             <>
               <AcknowledgeButton callId={call.id} />
-              <p className={due.state === "overdue" ? "font-bold text-danger" : "font-semibold"}>{due.text}</p>
+              <p className={due.state === "overdue" ? "font-bold text-[#7a0e08]" : "font-semibold"}>{due.text}</p>
             </>
           )}
         </div>

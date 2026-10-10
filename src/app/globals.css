@@ -1,20 +1,22 @@
 @import "tailwindcss";
 
-/* Neumorphism ("soft UI"): one background colour, and every surface is either pushed out of it (raised) or pressed
-   into it (inset) with a pair of soft shadows, a light one top-left and a dark one bottom-right.
-   Text stays dark and strong, because this style is easy to make unreadable. */
+/* Dark dashboard: charcoal page, lighter panels, one emerald accent with a soft glow on the active item.
+   The token names stay the same as in earlier versions, so every page that uses them (founder, settings, login)
+   picks the new colours up. */
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
 
-  --color-paper: #e6eaf1;
-  --color-ink: #25304a;
-  --color-mute: #56617a;
-  --color-line: rgba(37, 48, 74, 0.14);
-  /* The one action colour. White on it is 5.7:1. */
-  --color-accent: #4f5bd5;
-  --color-danger: #c23556;
-  --color-good: #167a64;
-  --color-warn: #a35d00;
+  --color-paper: #16181b;
+  --color-ink: #f2f4f6;
+  --color-mute: #9097a1;
+  --color-line: #2e3238;
+  --color-accent: #19c37d;
+  --color-danger: #ff5d55;
+  --color-good: #2fdc92;
+  --color-warn: #f5b73b;
+  --color-panel: #212428;
+  --color-panel2: #292d32;
+  --color-well: #1a1c20;
 
   --text-small: 13px;
   --text-small--line-height: 1.5;
@@ -24,22 +26,13 @@
   --text-title--line-height: 1.2;
 }
 
-:root {
-  --n-bg: #e6eaf1;
-  --n-light: #ffffff;
-  --n-dark: #b9c1d1;
-  --n-raised: 9px 9px 18px var(--n-dark), -9px -9px 18px var(--n-light);
-  --n-raised-sm: 5px 5px 10px var(--n-dark), -5px -5px 10px var(--n-light);
-  --n-inset: inset 6px 6px 12px var(--n-dark), inset -6px -6px 12px var(--n-light);
-  --n-inset-sm: inset 3px 3px 6px var(--n-dark), inset -3px -3px 6px var(--n-light);
-}
-
 html {
-  background: var(--n-bg);
+  background: #16181b;
+  color-scheme: dark;
 }
 
 body {
-  background: var(--n-bg);
+  background: #16181b;
   color: var(--color-ink);
   font-family: var(--font-sans);
   font-size: 15px;
@@ -51,89 +44,101 @@ h1,
 h2,
 h3 {
   font-weight: 700;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.01em;
 }
 
 :focus-visible {
-  outline: 3px solid var(--color-accent);
-  outline-offset: 3px;
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
-/* Surfaces */
+/* Surfaces. (The n- names are kept from the earlier theme so existing markup keeps working.) */
 .n-card {
-  background: var(--n-bg);
-  border-radius: 22px;
-  box-shadow: var(--n-raised);
+  background: var(--color-panel);
+  border-radius: 18px;
+  border: 1px solid #2a2e33;
 }
 .n-card-sm {
-  background: var(--n-bg);
-  border-radius: 16px;
-  box-shadow: var(--n-raised-sm);
-}
-.n-inset {
-  background: var(--n-bg);
-  border-radius: 18px;
-  box-shadow: var(--n-inset);
-}
-.n-inset-sm {
-  background: var(--n-bg);
+  background: var(--color-panel2);
   border-radius: 14px;
-  box-shadow: var(--n-inset-sm);
+  border: 1px solid #31353b;
+}
+.n-inset,
+.n-inset-sm {
+  background: var(--color-well);
+  border-radius: 14px;
+  border: 1px solid #25282d;
 }
 
-/* ---- Ant Design, softened ---- */
-.ant-btn {
-  border: none !important;
-  transition: box-shadow 0.15s, transform 0.15s;
-}
-.ant-btn-default {
-  background: var(--n-bg) !important;
-  box-shadow: var(--n-raised-sm) !important;
-  color: var(--color-ink) !important;
-}
-.ant-btn-primary {
-  box-shadow: 5px 5px 10px var(--n-dark), -5px -5px 10px var(--n-light) !important;
-}
-.ant-btn:active:not(:disabled) {
-  box-shadow: var(--n-inset-sm) !important;
-  transform: translateY(1px);
-}
-.ant-btn:disabled,
-.ant-btn-disabled {
-  box-shadow: none !important;
-  opacity: 0.55;
+/* The accent card (like the promo tile in the reference): used for the call's main action. */
+.d-accent-card {
+  background: linear-gradient(160deg, #1fcf86 0%, #12a366 100%);
+  color: #04170e;
+  border-radius: 16px;
+  box-shadow: 0 0 28px rgba(25, 195, 125, 0.28);
 }
 
-/* Fields are pressed into the surface. */
-.ant-input-outlined,
-.ant-input-affix-wrapper,
-.ant-input-outlined.ant-input-textarea,
-.ant-select-outlined:not(.ant-select-customize-input),
-.ant-select-outlined {
-  background: var(--n-bg) !important;
-  border: none !important;
-  box-shadow: var(--n-inset-sm) !important;
-  border-radius: 14px !important;
+/* Sidebar */
+.d-side {
+  background: #1c1e22;
+  border-right: 1px solid #26292e;
 }
-.ant-input-search .ant-input-search-button {
-  box-shadow: var(--n-raised-sm) !important;
-  border-radius: 14px !important;
+.d-nav-label {
+  color: #6f7680;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 18px 14px 6px;
 }
-.ant-select-outlined .ant-select-selector,
-.ant-select-outlined .ant-select-content {
-  background: transparent !important;
+.d-nav a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px 14px;
+  border-radius: 12px;
+  color: #d4d8dd;
+  font-weight: 500;
+  transition: background 0.15s;
 }
-.ant-checkbox {
-  border-radius: 7px;
-  box-shadow: var(--n-inset-sm);
-  background: var(--n-bg);
+.d-nav a:hover {
+  background: #262a2f;
 }
-.ant-checkbox.ant-checkbox-checked {
+.d-nav a[aria-current="page"] {
   background: var(--color-accent);
-  box-shadow: 3px 3px 6px var(--n-dark), -3px -3px 6px var(--n-light);
+  color: #04170e;
+  font-weight: 700;
+  box-shadow: 0 0 22px rgba(25, 195, 125, 0.4);
+}
+.d-badge {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 7px;
+  background: #ff4a3d;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
 }
 
-/* The call table sits in a raised card; the open call is pressed in. */
+/* ---- Ant Design adjustments ---- */
+.ant-btn-primary {
+  box-shadow: 0 0 18px rgba(25, 195, 125, 0.3) !important;
+  font-weight: 700;
+}
+.ant-btn-primary:disabled,
+.ant-btn-primary.ant-btn-disabled {
+  box-shadow: none !important;
+}
+.ant-select-outlined,
+.ant-input-outlined,
+.ant-input-affix-wrapper {
+  background: var(--color-well) !important;
+}
+
+/* The call table sits inside a panel; the open call gets a green edge. */
 .ant-table-wrapper .ant-table,
 .ant-table-wrapper .ant-table-container,
 .ant-table-wrapper table {
@@ -142,7 +147,7 @@ h3 {
 .ant-table-wrapper .ant-table-thead > tr > th {
   background: transparent !important;
   color: var(--color-mute);
-  font-weight: 700;
+  font-weight: 600;
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -152,36 +157,34 @@ h3 {
   display: none !important;
 }
 .ant-table-wrapper .ant-table-tbody > tr > td {
-  border-bottom: 1px solid var(--color-line) !important;
+  border-bottom: 1px solid #2a2e33 !important;
   background: transparent !important;
 }
 .ant-table-wrapper .ant-table-tbody > tr.m-row:hover > td {
-  background: rgba(255, 255, 255, 0.45) !important;
+  background: rgba(255, 255, 255, 0.035) !important;
 }
 .ant-table-wrapper .ant-table-tbody > tr.m-row-open > td {
-  background: rgba(79, 91, 213, 0.08) !important;
-  font-weight: 500;
+  background: rgba(25, 195, 125, 0.09) !important;
+}
+.ant-table-wrapper .ant-table-tbody > tr.m-row-open > td:first-child {
+  box-shadow: inset 3px 0 0 var(--color-accent);
 }
 .ant-table-wrapper .ant-table-tbody > tr.ant-table-expanded-row > td {
   padding: 14px !important;
   background: transparent !important;
 }
 
-/* Details: every drop-down is its own raised card. */
+/* Details: each drop-down is its own card. */
 .n-collapse.ant-collapse {
   background: transparent !important;
   border: none !important;
 }
 .n-collapse .ant-collapse-item {
-  background: var(--n-bg) !important;
-  border: none !important;
-  border-radius: 18px !important;
-  box-shadow: var(--n-raised-sm);
-  margin-bottom: 14px;
+  background: var(--color-panel2) !important;
+  border: 1px solid #31353b !important;
+  border-radius: 14px !important;
+  margin-bottom: 12px;
   overflow: hidden;
-}
-.n-collapse .ant-collapse-header {
-  font-size: 15px;
 }
 .n-collapse .ant-collapse-panel,
 .n-collapse .ant-collapse-body {
@@ -192,70 +195,50 @@ h3 {
   padding-top: 4px !important;
 }
 
-/* Segmented control (the tabs): a pressed-in track with a raised thumb. */
+/* The list switcher: a dark track with the chosen tab filled in green. */
 .n-tabs.ant-segmented {
-  background: var(--n-bg) !important;
-  box-shadow: var(--n-inset-sm);
-  border-radius: 18px;
-  padding: 5px;
+  background: var(--color-well) !important;
+  border: 1px solid #25282d;
+  border-radius: 14px;
+  padding: 4px;
 }
 .n-tabs .ant-segmented-item-selected,
 .n-tabs .ant-segmented-thumb {
-  background: var(--n-bg) !important;
-  box-shadow: var(--n-raised-sm) !important;
-  border-radius: 14px;
+  background: var(--color-accent) !important;
+  color: #04170e !important;
+  border-radius: 10px;
+  box-shadow: 0 0 16px rgba(25, 195, 125, 0.35);
 }
 .n-tabs .ant-segmented-item {
-  border-radius: 14px;
+  border-radius: 10px;
 }
 
-.ant-menu-horizontal > .ant-menu-item,
-.ant-menu-horizontal > .ant-menu-item a {
-  color: var(--color-ink) !important;
-}
-.ant-menu-horizontal > .ant-menu-item-selected {
-  background: var(--n-bg) !important;
-  box-shadow: var(--n-inset-sm);
-}
-.ant-menu-horizontal > .ant-menu-item:hover:not(.ant-menu-item-selected) {
-  box-shadow: var(--n-raised-sm);
-  background: var(--n-bg) !important;
-}
-.ant-menu-horizontal > .ant-menu-item::after {
-  display: none !important;
-}
-
-/* Older pages (settings, login) use plain controls: soften them too. */
+/* Older pages (settings, login) use plain controls: make them dark. */
 input.border-line,
 select.border-line,
 textarea.border-line {
-  border: none;
-  background: var(--n-bg);
-  box-shadow: var(--n-inset-sm);
-  border-radius: 14px;
+  background: var(--color-well);
+  color: var(--color-ink);
+  border-color: var(--color-line);
+  border-radius: 12px;
 }
 button.border-ink,
 a.border-ink {
-  border-color: transparent;
-  background: var(--n-bg);
-  box-shadow: var(--n-raised-sm);
-  border-radius: 14px;
+  background: var(--color-panel2);
+  color: var(--color-ink);
+  border-color: var(--color-line);
+  border-radius: 12px;
 }
 button.bg-accent {
-  border-radius: 14px;
-  box-shadow: 5px 5px 10px var(--n-dark), -5px -5px 10px var(--n-light);
+  color: #04170e;
+  border-radius: 12px;
+  font-weight: 700;
+  box-shadow: 0 0 18px rgba(25, 195, 125, 0.3);
 }
-button:active:not(:disabled).border-ink,
-button:active:not(:disabled).bg-accent {
-  box-shadow: var(--n-inset-sm);
+.bg-white {
+  background: var(--color-panel);
 }
 table {
-  border-color: var(--color-line);
-}
-.border-t.border-line,
-.border-b.border-line,
-.border-y.border-line,
-li.border-line {
   border-color: var(--color-line);
 }
 
@@ -263,4 +246,46 @@ li.border-line {
   * {
     transition: none !important;
   }
+}
+
+/* Inside the green action card the main button flips to dark, so it still stands out. */
+.d-accent-card .ant-btn-primary {
+  background: #04170e !important;
+  color: #19c37d !important;
+  box-shadow: none !important;
+}
+.d-accent-card .ant-btn-primary:disabled {
+  opacity: 0.5;
+}
+.d-accent-card .ant-select-outlined {
+  background: rgba(4, 23, 14, 0.85) !important;
+}
+
+/* Checkboxes: a visible outline on the dark panel. */
+.ant-checkbox:not(.ant-checkbox-checked) {
+  box-shadow: inset 0 0 0 1.5px #5b626c;
+  border-radius: 6px;
+}
+
+/* Ant Design colours every link blue with a rule that beats Tailwind's text-colour classes. Links take the colour of their surroundings. */
+body a {
+  color: inherit;
+}
+
+/* The chosen pill in a row of choices: filled green with the glow, like the active sidebar item. */
+.d-pill-on {
+  background: var(--color-accent) !important;
+  color: #04170e !important;
+  font-weight: 700;
+  box-shadow: 0 0 18px rgba(25, 195, 125, 0.35);
+  border-color: transparent !important;
+}
+
+/* Links that are tabs: the chosen one in full colour, the others muted (the global link rule would flatten both). */
+a[role="tab"][aria-selected="false"] {
+  color: var(--color-mute);
+}
+a[role="tab"][aria-selected="true"] {
+  color: var(--color-ink);
+  border-color: var(--color-accent) !important;
 }

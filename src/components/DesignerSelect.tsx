@@ -10,9 +10,9 @@ export function DesignerSelect({ designers, currentId }: { designers: { id: numb
   const hidden = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState<number | null>(currentId);
   return (
-    <form ref={form} action={selectDesigner} className="flex items-center gap-2">
+    <form ref={form} action={selectDesigner} className="space-y-1.5">
       <input ref={hidden} type="hidden" name="designerId" defaultValue={currentId ?? ""} />
-      <label htmlFor="designer" className="text-small font-semibold">
+      <label htmlFor="designer" className="block text-small font-semibold text-mute">
         Viewing as
       </label>
       <Select
@@ -24,8 +24,8 @@ export function DesignerSelect({ designers, currentId }: { designers: { id: numb
           form.current?.requestSubmit();
         }}
         options={designers.map((d) => ({ value: d.id, label: d.name }))}
-        style={{ minWidth: 190 }}
-        popupMatchSelectWidth={false}
+        style={{ width: "100%" }}
+        popupMatchSelectWidth
       />
     </form>
   );

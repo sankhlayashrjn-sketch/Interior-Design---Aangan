@@ -61,7 +61,7 @@ export function CallTable({ rows, openId, closeHref, lastLabel, detail }: { rows
               s === null ? (
                 "–"
               ) : (
-                <span className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[13px] font-bold" style={{ boxShadow: "inset 2px 2px 4px #b9c1d1, inset -2px -2px 4px #ffffff" }}>
+                <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-line bg-well text-[13px] font-bold">
                   {s}
                 </span>
               ),
