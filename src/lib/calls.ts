@@ -1,5 +1,5 @@
 import "@/lib/runtime";
-import { and, asc, desc, eq, exists, gte, ilike, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
+import { and, asc, desc, eq, exists, gte, ilike, inArray, isNotNull, isNull, lt, ne, or } from "drizzle-orm";
 import { DateTime } from "luxon";
 import { db, one, schema } from "@/db";
 import { CALL_STATUSES, type AssignHow, type CallStatus } from "@/db/schema";
@@ -126,7 +126,7 @@ export async function listForDesigner(designerId: number | "all", tab: Tab, now:
   return listCalls(base, now, opts, tab === "pending" ? "priority" : "newest", overdueOf);
 }
 
-export type FrontDeskTab = "assign" | "disqualified" | "assigned";
+export type FrontDeskTab = "assign" | "disqualified" | "assigned" | "all";
 
 /** What the front desk sees: calls waiting to be assigned, disqualified calls to double-check, and calls already handed over. */
 export async function listForFrontDesk(tab: FrontDeskTab, now: Date = new Date(), opts: ListOptions = {}): Promise<Call[]> {
@@ -135,7 +135,9 @@ export async function listForFrontDesk(tab: FrontDeskTab, now: Date = new Date()
       ? [isNull(schema.calls.assignedDesignerId), inArray(schema.calls.status, ["qualified", "needs_attention"])]
       : tab === "disqualified"
         ? [eq(schema.calls.status, "disqualified")]
-        : [isNotNull(schema.calls.assignedDesignerId)];
+        : tab === "assigned"
+          ? [isNotNull(schema.calls.assignedDesignerId)]
+          : [ne(schema.calls.status, "yet_to_be_processed")]; // "all": the full call log
   const t = now.getTime();
   const overdueOf = (c: Call) => (tab === "assign" ? !!c.assignDueAt && c.assignDueAt.getTime() < t : !!c.dueAt && !c.acknowledgedAt && c.dueAt.getTime() < t);
   return listCalls(base, now, opts, tab === "assign" ? "priority" : "newest", overdueOf);
@@ -148,6 +150,7 @@ export async function countsForFrontDesk() {
     assign: processed.filter((c) => !c.assignedDesignerId && (c.status === "qualified" || c.status === "needs_attention")).length,
     disqualified: processed.filter((c) => c.status === "disqualified").length,
     assigned: processed.filter((c) => !!c.assignedDesignerId).length,
+    all: processed.length,
   };
 }
 

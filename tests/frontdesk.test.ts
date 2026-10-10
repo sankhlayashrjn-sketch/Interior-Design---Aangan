@@ -77,6 +77,15 @@ describe("manual mode: a call waits for the front desk", () => {
     expect(await countsForFrontDesk()).toMatchObject({ assign: 1, disqualified: 1, assigned: 0 });
   });
 
+  it("the All calls tab is the full log: assigned, unassigned and disqualified", async () => {
+    const a = await call("T01", "2026-10-07 11:00");
+    const b = await call("T02", "2026-10-07 11:05");
+    const d = await call("T03", "2026-10-07 11:10");
+    await assignCall(a.id, ARYAN, { id: ISHA, how: "front_desk" });
+    expect((await listForFrontDesk("all")).map((c) => c.id).sort()).toEqual([a.id, b.id, d.id].sort());
+    expect((await countsForFrontDesk()).all).toBe(3);
+  });
+
   it("the assign reminder goes to the front desk with one button per designer, and not to designers", async () => {
     const c = await call("T01", "2026-10-07 11:00");
     expect((await runDueJobs(at("2026-10-07 11:59"))).sent).toBe(0);

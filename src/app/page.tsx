@@ -11,6 +11,7 @@ const TABS: { key: FrontDeskTab; label: string }[] = [
   { key: "assign", label: "To assign" },
   { key: "disqualified", label: "Disqualified" },
   { key: "assigned", label: "Assigned" },
+  { key: "all", label: "All calls" },
 ];
 
 const SORTS: SortKey[] = ["priority", "newest", "due", "score"];
@@ -107,7 +108,7 @@ export default async function FrontDesk({ searchParams }: { searchParams: Promis
             hrefFor={(id) => href({ tab, open: id ? String(id) : "" })}
             detail={detail ? <CallDetail detail={detail} now={now} assign={assign} /> : null}
             lastLabel={tab === "assign" ? "Assign by" : "Status"}
-            subline={tab === "assigned" ? (c) => `With ${names.get(c.assignedDesignerId ?? -1) ?? "a designer"}` : undefined}
+            subline={tab === "assigned" || tab === "all" ? (c) => c.assignedDesignerId ? `With ${names.get(c.assignedDesignerId) ?? "a designer"}` : "Not assigned yet" : undefined}
             lastCell={(c) => (tab === "assign" ? assignCell(c, now) : { text: c.assignedDesignerId ? (c.acknowledgedAt ? "Acknowledged" : fmtDue(c.dueAt, null, now).text) : "–", overdue: false })}
           />
         )}
