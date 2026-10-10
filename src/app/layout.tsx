@@ -9,7 +9,7 @@ import { logoutAction } from "@/app/login/actions";
 import { authMode } from "@/lib/auth";
 import { currentDesigner, signedIn } from "@/lib/session";
 
-export const metadata = { title: "Aangan Enquiry Desk" };
+export const metadata = { title: "Aangan Studios Inquiry Tracker" };
 export const dynamic = "force-dynamic";
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
@@ -31,7 +31,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <header className="border-b border-line">
           <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
             <div className="flex flex-wrap items-center gap-x-8 gap-y-2">
-              <span className="font-medium">Aangan Enquiry Desk</span>
+              <span className="font-medium">Aangan Studios Inquiry Tracker</span>
               <Nav />
             </div>
             <div className="flex items-center gap-4">

@@ -1,4 +1,4 @@
-# Aangan Studio: Enquiry Desk
+# Aangan Studios Inquiry Tracker
 
 Handles **incoming phone calls** for Aangan Studio, an interior design studio in Pune. A voice agent answers the call. This app takes what was said, scores it against the studio's rubric, writes the designer a handoff note, assigns a designer, reminds them if they sit on it, and keeps the founder's HubSpot in step.
 
