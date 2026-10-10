@@ -110,7 +110,7 @@ async function findInHistory(callId: string, maxPages = 5): Promise<VaaniHistory
   return null;
 }
 
-async function transcriptFor(callId: string): Promise<string> {
+export async function transcriptFor(callId: string): Promise<string> {
   const d = await get<{ transcription?: unknown }>(`/api/call_details/${encodeURIComponent(callId)}`);
   // Until post-processing finishes Vaani answers with a sentence instead of a transcript.
   return typeof d.transcription === "string" && /(agent|user)\s*:/i.test(d.transcription) ? d.transcription : "";
@@ -188,7 +188,8 @@ export class VaaniAdapter implements VoiceProvider {
     const rawTranscript = typeof d.transcript === "string" ? d.transcript : "";
     // Some calls (browser test calls) arrive without a call_duration; the transcript's own timestamps still tell the length.
     const durationMs = Number(d.call_duration) || spanFromTimestamps(rawTranscript);
-    const ended = evt.timestamp ? new Date(evt.timestamp) : new Date();
+    const parsedEnd = evt.timestamp ? asUtc(evt.timestamp) : new Date();
+    const ended = Number.isNaN(parsedEnd.getTime()) ? new Date() : parsedEnd;
     const fallback: VaaniHistoryCall = {
       call_id: callId,
       call_type: "Inbound",
@@ -238,6 +239,11 @@ export class VaaniAdapter implements VoiceProvider {
 export const voiceProvider: VoiceProvider = new VaaniAdapter();
 
 /** Stream a call's recording from Vaani. Returns null if there is none (yet). */
+/** The finished transcript of a call, in the app's Agent:/Caller: format, or "" if Vaani has none yet. */
+export async function fetchVaaniTranscript(callId: string): Promise<string> {
+  return normaliseTranscript(await transcriptFor(callId));
+}
+
 export async function fetchRecording(callId: string): Promise<Response | null> {
   if (!env.VAANI_API_KEY) return null;
   const res = await fetch(`${base()}/api/stream/${encodeURIComponent(callId)}`, { headers: headers(), signal: AbortSignal.timeout(60_000) });

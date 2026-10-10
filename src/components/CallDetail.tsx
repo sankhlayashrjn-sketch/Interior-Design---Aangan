@@ -6,6 +6,7 @@ import { AssignForm, type AssignOption } from "@/components/AssignForm";
 import { FlagChip, StatusChip } from "@/components/Chip";
 import { NoteForm } from "@/components/NoteForm";
 import { OverrideForm } from "@/components/OverrideForm";
+import { TranscriptPanel } from "@/components/TranscriptPanel";
 import { N } from "@/components/neu/theme";
 import type { getDetail } from "@/lib/calls";
 import { fmtDateTime, fmtDue, PROPERTY_LABEL } from "@/lib/format";
@@ -50,31 +51,6 @@ export function CallDetail({ detail, now = new Date(), assign }: { detail: Detai
           )}
           <p className="whitespace-pre-line">{call.summary}</p>
           <Descriptions column={1} size="small" colon={false} items={[field("Already asked", call.alreadyAsked), field("Next step", call.suggestedNextStep)]} />
-        </div>
-      ),
-    },
-    {
-      key: "transcript",
-      label: <b>Transcript {turns.length > 0 && <span style={dim}>({turns.length} turns)</span>}</b>,
-      children: (
-        <div>
-          {linked && <p className="mb-3 text-small" style={dim}>Follows an earlier call from the same number at {fmtDateTime(linked.startedAt)}.</p>}
-          {turns.length === 0 ? (
-            <p style={dim}>No transcript was captured.</p>
-          ) : (
-            <ol className="space-y-2">
-              {turns.map((t, i) => (
-                <li key={i} className={`flex ${t.speaker === "agent" ? "justify-start" : "justify-end"}`}>
-                  <div className={`max-w-[85%] px-4 py-2.5 ${t.speaker === "agent" ? "n-card-sm" : "n-inset-sm"}`}>
-                    <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: t.speaker === "agent" ? N.accent : N.good }}>
-                      {t.speaker === "agent" ? "Agent" : "Caller"}
-                    </div>
-                    <div>{t.text}</div>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          )}
         </div>
       ),
     },
@@ -214,19 +190,12 @@ export function CallDetail({ detail, now = new Date(), assign }: { detail: Detai
           <FlagChip flag={call.flag} />
         </div>
         <p className="mt-1 text-small" style={dim}>
-          {fmtDateTime(call.startedAt)} · {Math.round((call.durationSec / 60) * 10) / 10} min · {call.callerPhone ?? "Caller ID withheld"}
+          {fmtDateTime(call.startedAt)} · {call.durationSec > 0 ? `${Math.round((call.durationSec / 60) * 10) / 10} min` : "length not reported"} · {call.callerPhone ?? "Caller ID withheld"}
           {call.callerEmail ? ` · ${call.callerEmail}` : ""} ·{" "}
           {assignedTo ? `Assigned to ${assignedTo}${assignedByName ? ` by ${assignedByName}` : ""}` : "Not assigned yet"}
           {call.afterHours ? " · After hours" : ""}
         </p>
-        {call.recordingUrl && (
-          <p className="mt-1">
-            <a href={call.recordingUrl} target="_blank" rel="noopener noreferrer" className="font-bold underline underline-offset-4">
-              Listen to the call
-            </a>
-          </p>
-        )}
-      </header>
+              </header>
 
       {canAssign && (
         <div className="n-card-sm p-5">
@@ -252,6 +221,8 @@ export function CallDetail({ detail, now = new Date(), assign }: { detail: Detai
       {call.guardrailHits && call.guardrailHits.length > 0 && (
         <Alert type="warning" showIcon={false} message={`Price guardrail: ${call.guardrailHits.join("; ")}. Do not quote prices; the designer gives a quote at the consultation.`} className="n-inset-sm" />
       )}
+
+      <TranscriptPanel callId={call.id} turns={turns} recordingUrl={call.recordingUrl} followsEarlier={linked ? fmtDateTime(linked.startedAt) : null} />
 
       <Collapse className="n-collapse" items={items} defaultActiveKey={["handoff"]} bordered={false} expandIconPlacement="end" />
     </article>

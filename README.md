@@ -53,7 +53,7 @@ Other commands:
 flowchart LR
   Caller(["Caller"]) --> Vaani["Vaanivoice.ai voice agent"]
   Vaani -->|"books a slot"| Cal["Cal.com"]
-  Vaani -->|"call ended: transcript, caller ID"| Adapter["VaaniAdapter (stub, to build)"]
+  Vaani -->|"call ended: transcript, caller ID"| Adapter["Vaani adapter: webhook, or polling"]
   Adapter --> Ingest
   Sim["Simulate call screen"] --> Ingest
   Cal -->|"webhook"| Bookings["POST /api/bookings"]
@@ -195,34 +195,19 @@ Set `INGEST_API_KEY` before exposing `POST /api/calls`; callers must then send i
 
 `npm run db:seed` refuses to run while any integration is live, because it would send demo calls to real services.
 
-**Not yet run against the real services.** Everything above is tested in mock mode. The live code paths for Anthropic, HubSpot, Telegram and Cal.com have not been exercised, because no keys were available. Expect to fix small things on first contact, and test each in a sandbox first. The places most likely to need adjusting are marked `TODO(verify)` in `src/lib/bookings.ts` (Cal.com payload and signature header) and `src/lib/hubspot/real.ts` (API versions).
+**Verified live:** HubSpot (`npm run hubspot:test`), Telegram (reminders and the Acknowledge and Assign buttons), Cal.com (webhook and booking), Gemini scoring (`npm run ai:test`, 20 of 21 samples match on the first pass) and the Vaani webhook with real browser test calls. **Not yet verified:** a real phone call through Vaani (caller ID, call length) and the Anthropic provider.
 
 ## Connecting Vaani
 
-The voice layer is deliberately a stub. Nothing in this repo guesses Vaani's endpoints or payloads.
+Built from Vaani's own docs (https://docs.vaanivoice.ai). The adapter is `src/lib/voice/vaani.ts`; the webhook is `POST /api/vaani/webhook?key=<VAANI_WEBHOOK_SECRET>`.
 
-What is known so far (from the studio, **not yet checked against Vaani's docs**): base URL `https://api.vaanivoice.ai`, auth header `X-API-Key`, a call-details endpoint that returns transcript, entities, evaluation and summary, and agents have an `agent_id` and a `system_prompt`. It is not confirmed whether Vaani sends end-of-call webhooks, hence `VAANI_INGEST_MODE=webhook|poll`.
-
-Steps:
-
-1. **Read Vaani's current API docs first.** Do not build from the notes above.
-2. **Fill in `src/lib/voice/vaani.ts`.** The interface is in `src/lib/voice/provider.ts`: `verifyWebhook`, `parseWebhook`, `listCallsSince`, `fetchCall`. Each method returns the same payload that `POST /api/calls` accepts:
-
-   | Payload field | Fill it from |
-   |---|---|
-   | `external_id` | Vaani's call ID (this is what makes retries safe) |
-   | `caller_phone` | Caller ID. `null` if withheld. The agent never asks for it. |
-   | `started_at` | Call start, ISO 8601 |
-   | `duration_sec` | Call length in seconds (drives telephony cost) |
-   | `transcript` | Flatten the turns to lines starting `Agent:` and `Caller:` |
-   | `recording_url` | A link to the call recording, if Vaani provides one (optional, http or https only). Designers see it as "Listen to the call". |
-| `booking_id`, `booked_slot` | The Cal.com booking the agent made, if Vaani's call details expose it. Otherwise leave them out; the Cal.com webhook links the booking by phone number. |
-
-3. **Wire the ingest mode.**
-   - Webhook mode: add a route such as `src/app/api/vaani/webhook/route.ts` that reads the raw body, calls `voiceProvider.verifyWebhook`, then `voiceProvider.parseWebhook`, then `ingestCall(payload)` from `src/lib/ingest.ts` for each result.
-   - Poll mode: in `src/lib/scheduler.ts`, call `voiceProvider.listCallsSince(cursor)` each tick, `ingestCall` each result, and store the cursor in the `app_state` table. Repeats are harmless because ingest dedupes on `external_id`.
-4. **Copy `prompts/voice_agent.md` into the agent's `system_prompt`** in Vaani. It tells the agent what to ask, to never quote a price, never ask for the phone number, and never ask about budget.
-5. **Test through Simulate first**, using a real transcript, before pointing live traffic at it.
+1. **Webhook (the way it runs).** In Vaani, add the webhook URL above (the key is in the URL because Vaani documents no signature). Of Vaani's events only `call_postprocessing` matters: it carries the finished transcript and the details Vaani extracted (name, email, preferred day and time). The app saves the call, scores it, and keeps the caller's email and the requested slot.
+2. **Caller number.** The finished-call event has no phone number and Vaani's call-history can fail for an account, so the number is taken from the earlier `call_started` event when Vaani sends it. Browser test calls have no number.
+3. **Polling (optional).** `VAANI_INGEST_MODE=poll` makes the tick fetch finished inbound calls from Vaani's call history instead. It needs the history endpoint to work for the account.
+4. **Recording.** Vaani's recording link needs the API key, so the app plays it through `/api/recording/<call id>`.
+5. **Transcript.** It appears at the top of each call. If it did not arrive with the event, the Fetch from Vaani button asks Vaani again.
+6. **The agent.** `prompts/voice_agent.md` is the agent's system prompt (it is already set on the agent in Vaani). It asks for the caller's name, email, and preferred day and time, never quotes a price, never asks for a phone number or budget, and answers only design questions.
+7. **Booking.** The agent does not book. When a designer is assigned the app books the nearest free Cal.com slot, titled with the designer's name (`src/lib/voice/book-after-call.ts`), and replaces it if the call is moved to another designer before it is acknowledged.
 
 ## Extending to WhatsApp and the web form
 
@@ -275,9 +260,9 @@ Stack: Next.js 16 (App Router), TypeScript, Tailwind 4, Postgres through Drizzle
 
 ## Known gaps
 
-- Live Anthropic and Cal.com paths untested against the real services. Telegram (reminders and the Acknowledge button) and HubSpot (`npm run hubspot:test`, 8 of 8) have been verified live.
-- The Vaani adapter is a stub (by design).
-- No fallback that creates a Cal.com booking after the call if the voice agent cannot book mid-call. The `POST /api/bookings` webhook already links a booking that arrives after the call, so a booking created by the app later could be fed through the same function (`applyCalEvent` in `src/lib/bookings.ts`).
+- The Anthropic provider is untested against the real service (Gemini is the live provider).
+- Vaani's call length is not known for browser test calls (the finished-call event omits it), so the call shows "length not reported".
+- The Cal.com booking sits on the account owner's calendar; only its title names the designer. Putting it on each designer's own calendar needs a Cal.com team with a calendar per designer.
 - Login is a single shared password, not per-person accounts.
 - A real Vercel deployment has not been tried yet. The Neon database is set up and verified (`npm run db:check:neon`, `npm run smoke:neon`).
 - WhatsApp and the web form are documented, not built.

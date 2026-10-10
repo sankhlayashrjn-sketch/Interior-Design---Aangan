@@ -67,6 +67,15 @@ const alreadySent = (callId: number, kind: Kind, designerId: number) =>
  * Safe to call any number of times. A reminder that was already sent is never sent again.
  */
 export async function scheduleForCall(callId: number, now: Date = new Date()): Promise<void> {
+  // Rebuilding is cancel-then-insert, so two rebuilds at once would leave duplicate jobs. Take turns per call.
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const done = await withLease(`schedule:${callId}`, 30_000, async () => (await rebuildSchedule(callId, now), true));
+    if (done) return;
+    await new Promise((res) => setTimeout(res, 250));
+  }
+}
+
+async function rebuildSchedule(callId: number, now: Date): Promise<void> {
   const call = await getCall(callId);
   if (!call) return;
   // Demo data from the seed script is never reminded about, even when the schedule is recomputed.
@@ -109,8 +118,17 @@ export async function scheduleForCall(callId: number, now: Date = new Date()): P
 
 async function queueSlot(call: Call, recipients: number[], slotAlertMinutes: number, now: Date) {
   if (!call.bookedSlot || call.bookingStatus === "cancelled" || call.bookedSlot.getTime() <= now.getTime()) return;
-  const runAt = new Date(Math.max(call.bookedSlot.getTime() - slotAlertMinutes * 60_000, now.getTime()));
-  for (const designerId of recipients) await addJob({ kind: "slot", callId: call.id, designerId, runAt }, now);
+  const lead = slotAlertMinutes * 60_000;
+  const runAt = new Date(Math.max(call.bookedSlot.getTime() - lead, now.getTime()));
+  for (const designerId of recipients) {
+    // The urgent alert for THIS slot goes out once. (A moved booking has a later slot, so it is alerted again.)
+    const sent = await db
+      .select()
+      .from(schema.reminderJobs)
+      .where(and(eq(schema.reminderJobs.callId, call.id), eq(schema.reminderJobs.kind, "slot"), eq(schema.reminderJobs.designerId, designerId), eq(schema.reminderJobs.state, "sent")));
+    const already = sent.some((j) => j.sentAt && j.sentAt.getTime() >= call.bookedSlot!.getTime() - lead - 5 * 60_000 && j.sentAt.getTime() <= call.bookedSlot!.getTime());
+    if (!already) await addJob({ kind: "slot", callId: call.id, designerId, runAt }, now);
+  }
 }
 
 /** Working hours or SLA changed: cancel everything pending and rebuild it for every unacknowledged call. */
@@ -174,6 +192,17 @@ async function execute(job: Job, now: Date): Promise<Outcome> {
 
   const call = job.callId ? await getCall(job.callId) : undefined;
   if (!call) return { state: "cancelled", note: "cancelled: call not found" };
+  // A duplicate pending job (two rebuilds that raced) must not send the same reminder a second time.
+  if (job.kind === "sla" || job.kind === "assign") {
+    const twin = await one(
+      db
+        .select()
+        .from(schema.reminderJobs)
+        .where(and(eq(schema.reminderJobs.callId, call.id), eq(schema.reminderJobs.kind, job.kind), eq(schema.reminderJobs.designerId, job.designerId ?? -1), eq(schema.reminderJobs.state, "sent")))
+        .limit(1),
+    );
+    if (twin) return { state: "cancelled", note: "cancelled: already sent" };
+  }
   if (call.acknowledgedAt) return { state: "cancelled", note: "cancelled: acknowledged" };
   const forFrontDesk = d.role === "front_desk";
   if (forFrontDesk && !needsAssigning(call)) return { state: "cancelled", note: "cancelled: already assigned" };

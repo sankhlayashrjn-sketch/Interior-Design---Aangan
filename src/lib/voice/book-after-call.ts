@@ -1,6 +1,6 @@
 import { DateTime } from "luxon";
 import { eq } from "drizzle-orm";
-import { db, schema } from "@/db";
+import { db, schema, withLease } from "@/db";
 import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
 import { emit, on } from "@/lib/hooks";
@@ -66,6 +66,16 @@ const api = (path: string, init: RequestInit = {}, version = "2024-08-13") =>
  * a different designer, that booking is cancelled and replaced. A booking made by anyone else is never touched.
  */
 export async function bookAfterCall(callId: number, now: Date = new Date()): Promise<BookOutcome> {
+  // One booking attempt per call at a time: two assignments in quick succession must not both book.
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const r = await withLease(`booking:${callId}`, 90_000, () => bookOnce(callId, now));
+    if (r) return r;
+    await new Promise((res) => setTimeout(res, 400)); // another attempt is running: wait for it, then look again
+  }
+  return { state: "skipped", reason: "another booking attempt was still running" };
+}
+
+async function bookOnce(callId: number, now: Date): Promise<BookOutcome> {
   const skip = async (reason: string, state: "skipped" | "failed" = "skipped"): Promise<BookOutcome> => {
     await audit("booking.auto", { state, reason }, callId);
     return { state, reason };
@@ -91,6 +101,8 @@ export async function bookAfterCall(callId: number, now: Date = new Date()): Pro
     if (active && ours) {
       const c = await api(`/bookings/${wish.appBookingUid}/cancel`, { method: "POST", body: JSON.stringify({ cancellationReason: "The call was given to another designer" }) });
       if (!c.ok) return skip(`could not replace the earlier booking (Cal.com ${c.status})`, "failed");
+      // The old booking is gone. Record that now, so if the new one fails the next attempt starts clean instead of cancelling again.
+      await db.update(schema.calls).set({ bookingStatus: "cancelled", bookingWish: { ...wish, appBookingDesignerId: undefined } satisfies StoredWish }).where(eq(schema.calls.id, callId));
     }
 
     const asked = DateTime.fromISO(wish.wantedAt, { zone: IST });
@@ -137,6 +149,10 @@ export async function bookAfterCall(callId: number, now: Date = new Date()): Pro
 /** Book (or re-book) whenever a call is given to a designer. Registered once, from runtime.ts. */
 export function registerBookingHandlers() {
   on("call.assigned", async ({ callId }) => {
+    await bookAfterCall(callId);
+  });
+  // In automatic mode a late-scored call is assigned while it is processed, with no call.assigned event.
+  on("call.processed", async ({ callId }) => {
     await bookAfterCall(callId);
   });
 }

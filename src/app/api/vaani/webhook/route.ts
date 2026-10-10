@@ -26,10 +26,8 @@ export async function POST(req: Request) {
   try {
     for (const payload of await voiceProvider.parseWebhook(raw)) {
       const { outcome, call } = await ingestCall(payload);
-      if (outcome === "created") {
-        created++;
-        await bookFromEntities(call.id, raw);
-      }
+      if (outcome === "created") created++;
+      await bookFromEntities(call.id, raw); // also on a retry: saving the details and booking are both safe to repeat
     }
   } catch (e) {
     if (e instanceof ZodError) return NextResponse.json({ ok: true, ignored: "payload did not fit" });

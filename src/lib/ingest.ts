@@ -48,6 +48,9 @@ export interface IngestResult {
 const getCall = async (id: number) => (await one(db.select().from(schema.calls).where(eq(schema.calls.id, id))))!;
 const findByExternalId = (externalId: string) => one(db.select().from(schema.calls).where(eq(schema.calls.externalId, externalId)));
 
+/** How many times a call may fail to be processed before it is parked for a human. */
+const MAX_PROCESS_ATTEMPTS = 5;
+
 /** A worker that claimed a call and then died is considered gone after this long, and another worker may take over. */
 const CLAIM_TIMEOUT_MS = 5 * 60_000;
 
@@ -180,7 +183,7 @@ function rubricInputFor(call: Call, o: AiOutput): RubricInput {
     notALead: o.not_a_lead,
     existingClient: o.existing_client,
     proxyNoAuthority: o.proxy_no_authority,
-    hasPhone: !!call.callerPhone,
+    hasPhone: !!(call.callerPhone || call.callerEmail), // reachable: caller ID or an email they gave
     hasBooking,
     transcript: call.transcript,
     llmReason: o.reason ?? undefined,
@@ -202,7 +205,7 @@ async function outcomeFor(call: Call, o: AiOutput) {
  * Run the AI on a saved call, assign a designer, compute the SLA and write cost.
  * Safe to call from several servers at once: the call is claimed first, so it is processed exactly once.
  */
-export async function processCall(callId: number): Promise<Call> {
+export async function processCall(callId: number, opts: { giveUp?: boolean } = {}): Promise<Call> {
   const claimed = await db
     .update(schema.calls)
     .set({ processingStartedAt: new Date() })
@@ -223,10 +226,12 @@ export async function processCall(callId: number): Promise<Call> {
 
   let scored;
   try {
-    scored = await scoreTranscript(
-      { transcript: call.transcript, startedAt: call.startedAt, durationSec: call.durationSec, hasPhone: !!call.callerPhone, bookedSlot: hasBooking ? call.bookedSlot : null },
-      settings.aiModel || env.ANTHROPIC_MODEL,
-    );
+    scored = opts.giveUp
+      ? { output: null, usage: { inputTokens: 0, outputTokens: 0 }, model: "none", error: "gave up after repeated failures" }
+      : await scoreTranscript(
+          { transcript: call.transcript, startedAt: call.startedAt, durationSec: call.durationSec, hasPhone: !!(call.callerPhone || call.callerEmail), bookedSlot: hasBooking ? call.bookedSlot : null },
+          settings.aiModel || env.ANTHROPIC_MODEL,
+        );
   } catch (e) {
     await db.update(schema.calls).set({ processingStartedAt: null }).where(eq(schema.calls.id, callId)); // release the claim so it can be retried
     throw e;
@@ -316,12 +321,62 @@ export async function processCall(callId: number): Promise<Call> {
   return getCall(callId);
 }
 
+/**
+ * Run the AI again on a call whose transcript changed after it was first scored (a transcript that arrived late or
+ * incomplete). Updates what the AI works out (name, place, scope, summary, score, status). Never touches who has the
+ * call, whether it was acknowledged, or a status a person set by hand. If the AI fails, the call is left as it was.
+ */
+export async function reanalyseCall(callId: number): Promise<Call> {
+  const call = await getCall(callId);
+  if (!call.processedAt) return call; // not scored yet: its normal processing will read the current transcript
+  const settings = await getSettings();
+  const hasBooking = !!call.bookedSlot && call.bookingStatus !== "cancelled";
+  const scored = await scoreTranscript(
+    { transcript: call.transcript, startedAt: call.startedAt, durationSec: call.durationSec, hasPhone: !!(call.callerPhone || call.callerEmail), bookedSlot: hasBooking ? call.bookedSlot : null },
+    settings.aiModel || env.ANTHROPIC_MODEL,
+  );
+  const o = scored.output;
+  if (!o) {
+    await audit("ai.failed", { error: scored.error, during: "reanalyse" }, callId);
+    return call;
+  }
+  const { result, guarded, hits } = await outcomeFor(call, o);
+  const overridden = !!(await one(db.select().from(schema.statusOverrides).where(eq(schema.statusOverrides.callId, callId)).limit(1)));
+  const patch: Partial<Call> = {
+    flag: flagFor(o),
+    callerName: o.caller_name ?? call.callerName,
+    location: o.location,
+    propertyType: o.property_type === "unknown" ? null : o.property_type,
+    areaSqft: o.area_sqft,
+    scope: o.scope,
+    timeline: o.timeline,
+    budget: o.budget,
+    score: result.score,
+    scoreBreakdown: result.breakdown,
+    summary: guarded.summary,
+    alreadyAsked: guarded.already_asked,
+    suggestedNextStep: guarded.suggested_next_step,
+    guardrailHits: hits.length ? hits : null,
+    aiOutput: o,
+  };
+  if (!overridden) {
+    patch.status = result.status;
+    patch.reason = result.status !== "qualified" && !result.reason ? "Review needed" : result.reason;
+  }
+  await db.update(schema.calls).set(patch).where(eq(schema.calls.id, callId));
+  await audit("call.reanalysed", { status: patch.status ?? call.status, score: result.score }, callId);
+  await emit("call.processed", { callId }); // reminders and HubSpot follow the new status
+  return getCall(callId);
+}
+
 /** Process anything still "yet_to_be_processed" (for example after a crash). */
 export async function processPending(): Promise<number> {
   const rows = await db.select().from(schema.calls).where(and(eq(schema.calls.status, "yet_to_be_processed"), isNull(schema.calls.processedAt)));
   for (const r of rows) {
     try {
-      await processCall(r.id);
+      // After repeated failures stop calling the AI every minute: park the call for a human instead.
+      const failures = (await db.select().from(schema.auditLog).where(and(eq(schema.auditLog.callId, r.id), eq(schema.auditLog.kind, "process.error")))).length;
+      await processCall(r.id, { giveUp: failures >= MAX_PROCESS_ATTEMPTS });
     } catch (e) {
       await audit("process.error", { error: e instanceof Error ? e.message : String(e) }, r.id);
     }

@@ -9,6 +9,7 @@ import { acknowledgeCall, addNote, assignCall, overrideStatus, UserError, active
 import { db, one, schema } from "@/db";
 import { eq } from "drizzle-orm";
 import { ingestCall } from "@/lib/ingest";
+import { refreshTranscript } from "@/lib/voice/transcript";
 import { DESIGNER_COOKIE, currentDesigner, currentPerson } from "@/lib/session";
 import { IST } from "@/lib/working-hours";
 
@@ -135,4 +136,13 @@ export async function simulateAction(_prev: SimulateState, formData: FormData): 
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Could not process the call" };
   }
+}
+
+/** Fetch a call's transcript from Vaani again (for when it did not arrive with the call, or arrived incomplete). */
+export async function refreshTranscriptAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const callId = Number(formData.get("callId"));
+  if (!callId) return { error: "Call not found" };
+  const r = await refreshTranscript(callId);
+  if (r.ok) revalidatePath("/", "layout");
+  return r.ok ? { ok: r.message } : { error: r.message };
 }

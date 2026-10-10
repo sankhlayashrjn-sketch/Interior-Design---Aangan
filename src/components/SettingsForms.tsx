@@ -117,7 +117,7 @@ export function SettingsForm({ s }: { s: SettingsData }) {
 
       <div className="max-w-xl">
         <label htmlFor="model" className={label}>
-          AI model name (used when AI_MODE=live)
+          AI model name (Anthropic only; Gemini uses GEMINI_MODEL)
         </label>
         <input id="model" name="aiModel" defaultValue={s.aiModel} required className={input} />
       </div>

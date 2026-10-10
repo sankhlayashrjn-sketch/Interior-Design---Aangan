@@ -198,7 +198,7 @@ export async function syncDirty(api: HubSpotApi = getHubSpot()): Promise<{ pushe
       continue;
     }
     if (await syncCall(r.callId, api)) out.pushed++;
-    else out.failed++;
+    else if ((await syncRow(r.callId))?.lastError) out.failed++; // a real error was recorded; a busy lease or a demo call is just skipped
   }
   return out;
 }
