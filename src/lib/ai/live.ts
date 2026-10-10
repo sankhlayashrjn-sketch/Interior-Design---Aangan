@@ -7,14 +7,14 @@ import { AiOutputSchema, type ScoreRequest, type ScoreResult } from "./schema";
 
 let client: Anthropic | null = null;
 
-function extractJson(text: string): unknown {
+export function extractJson(text: string): unknown {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start < 0 || end <= start) throw new Error("No JSON object in the response");
   return JSON.parse(text.slice(start, end + 1));
 }
 
-function userMessage(req: ScoreRequest): string {
+export function userMessage(req: ScoreRequest): string {
   const when = DateTime.fromJSDate(req.startedAt, { zone: IST });
   return [
     "Call details (trusted, from the system):",

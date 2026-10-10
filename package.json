@@ -17,6 +17,7 @@
     "hubspot:check": "tsx scripts/hubspot-check.ts",
     "vercel-build": "tsx scripts/migrate.ts && next build",
     "db:generate": "drizzle-kit generate",
+    "ai:test": "tsx scripts/ai-live-test.ts",
     "db:check": "tsx scripts/db-check.ts",
     "db:check:neon": "tsx --env-file=.env.neon scripts/db-check.ts",
     "db:migrate:neon": "tsx --env-file=.env.neon scripts/migrate.ts",

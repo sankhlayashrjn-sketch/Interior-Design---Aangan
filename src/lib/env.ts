@@ -27,6 +27,9 @@ const schema = z.object({
   CALCOM_EVENT_TYPE_ID: z.string().default(""),
   APP_BASE_URL: z.string().default("http://localhost:3000"),
   DATABASE_URL: z.string().default("./data/pglite"),
+  AI_PROVIDER: z.enum(["anthropic", "gemini"]).default("anthropic"),
+  GEMINI_API_KEY: z.string().default(""),
+  GEMINI_MODEL: z.string().default("gemini-3.8-flash"),
   ANTHROPIC_API_KEY: z.string().default(""),
   ANTHROPIC_MODEL: z.string().default("claude-sonnet-5-5"),
   HUBSPOT_TOKEN: z.string().default(""),
@@ -51,7 +54,7 @@ export type Env = z.infer<typeof schema>;
 /** Which integrations are live and whether their key is set. Never returns a key's value. */
 export function integrationStatus() {
   return [
-    { name: "AI scoring", live: env.AI_MODE === "live", keySet: !!env.ANTHROPIC_API_KEY, needs: "ANTHROPIC_API_KEY" },
+    { name: "AI scoring", live: env.AI_MODE === "live", keySet: env.AI_PROVIDER === "gemini" ? !!env.GEMINI_API_KEY : !!env.ANTHROPIC_API_KEY, needs: env.AI_PROVIDER === "gemini" ? "GEMINI_API_KEY" : "ANTHROPIC_API_KEY" },
     { name: "HubSpot", live: env.HUBSPOT_MODE === "live", keySet: !!env.HUBSPOT_TOKEN, needs: "HUBSPOT_TOKEN" },
     { name: "Telegram", live: env.TELEGRAM_MODE === "live", keySet: !!env.TELEGRAM_BOT_TOKEN, needs: "TELEGRAM_BOT_TOKEN" },
     { name: "Cal.com", live: env.CALCOM_MODE === "live", keySet: !!env.CALCOM_WEBHOOK_SECRET, needs: "CALCOM_WEBHOOK_SECRET" },
