@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db, one, schema } from "@/db";
 import { env } from "@/lib/env";
-import { wishFromEntities } from "./book-after-call";
+import { wishFromEntities } from "./wish";
 import type { IngestPayload } from "@/lib/ingest";
 import type { VoiceProvider } from "./provider";
 

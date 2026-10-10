@@ -189,3 +189,14 @@ describe("Vaani polling", () => {
 });
 
 void payloadFor;
+
+describe("the recording route", () => {
+  it("loads on its own (no circular import through the booking code) and answers 404 when there is no recording", async () => {
+    vi.resetModules();
+    stubVaani([]);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 404 })));
+    const { GET } = await import("@/app/api/recording/[callId]/route");
+    const res = await GET(new Request("http://x/api/recording/nope"), { params: Promise.resolve({ callId: "nope" }) });
+    expect(res.status).toBe(404);
+  });
+});
