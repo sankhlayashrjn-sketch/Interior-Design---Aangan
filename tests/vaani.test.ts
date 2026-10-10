@@ -99,6 +99,12 @@ describe("Vaani webhook", () => {
     expect(p.transcript).toContain("Caller:");
   });
 
+  it("the email the caller gave (an entity) is carried onto the call", async () => {
+    stubVaani([historyCall()]);
+    const [p] = await new VaaniAdapter().parseWebhook(evt({ data: { call_id: "inbound-1784899978-aaaa1111", call_duration: 1000, transcript: TRANSCRIPT, entities: { customer_email: "Priya@Example.com" } } }));
+    expect(p.caller_email).toBe("priya@example.com");
+  });
+
   it("still stores the call, with caller ID unknown, if the history cannot be read", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 500 })));
     const [p] = await new VaaniAdapter().parseWebhook(evt());

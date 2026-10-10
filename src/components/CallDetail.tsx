@@ -52,7 +52,7 @@ export function CallDetail({ detail, now = new Date(), assign }: { detail: Detai
           <FlagChip flag={call.flag} />
         </div>
         <p className="mt-1 text-small text-mute">
-          {fmtDateTime(call.startedAt)} · {Math.round(call.durationSec / 60 * 10) / 10} min · {call.callerPhone ?? "Caller ID withheld"} · {assignedTo ? `Assigned to ${assignedTo}${assignedByName ? ` by ${assignedByName}` : ""}` : "Not assigned yet"}
+          {fmtDateTime(call.startedAt)} · {Math.round(call.durationSec / 60 * 10) / 10} min · {call.callerPhone ?? "Caller ID withheld"}{call.callerEmail ? ` · ${call.callerEmail}` : ""} · {assignedTo ? `Assigned to ${assignedTo}${assignedByName ? ` by ${assignedByName}` : ""}` : "Not assigned yet"}
           {call.afterHours ? " · After hours" : ""}
         </p>
         {call.recordingUrl && (
@@ -147,6 +147,7 @@ export function CallDetail({ detail, now = new Date(), assign }: { detail: Detai
             <dl>
               <Field label="Name" value={call.callerName} />
               <Field label="Phone" value={call.callerPhone ?? "Caller ID withheld"} />
+              <Field label="Email" value={call.callerEmail} />
               <Field label="Location" value={call.location} />
               <Field label="Property" value={PROPERTY_LABEL(call.propertyType)} />
               <Field label="Area" value={call.areaSqft ? `${call.areaSqft.toLocaleString("en-IN")} sq ft` : null} />

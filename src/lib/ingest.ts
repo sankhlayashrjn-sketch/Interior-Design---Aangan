@@ -25,6 +25,7 @@ export const IngestPayloadSchema = z.object({
   duration_sec: z.number().int().min(0),
   transcript: z.string(),
   /** Link to the recording, if the provider has one. http(s) only. */
+  caller_email: z.string().email().nullable().optional(),
   recording_url: z
     .string()
     .nullable()
@@ -83,6 +84,7 @@ export async function ingestCall(raw: unknown, opts: { process?: boolean } = {})
     .values({
       externalId: payload.external_id,
       callerPhone: phone,
+      callerEmail: payload.caller_email?.toLowerCase() ?? null,
       startedAt,
       durationSec: payload.duration_sec,
       transcript: payload.transcript,
@@ -275,13 +277,14 @@ export async function processCall(callId: number): Promise<Call> {
     });
   }
 
-  // Who gets the call now. In manual mode only a Cal.com booking host is assigned straight away; everything else waits
-  // in the front desk inbox. In automatic mode the app assigns it at once, recorded as assigned when the call arrived.
+  // Who gets the call now. In manual mode every call waits in the front desk inbox (the Cal.com host, if any, is the
+  // suggested designer). In automatic mode the app assigns it at once, recorded as assigned when the call arrived.
   const hostId = bookingRow?.hostDesignerId ?? null;
-  if (hostId || settings.assignmentMode === "auto") {
+  // The booking host is only a suggestion in the front desk inbox; the app assigns by itself only in automatic mode.
+  if (settings.assignmentMode === "auto") {
     update.assignedDesignerId = await assignDesigner({ callId, bookingHostDesignerId: hostId, escalate });
     if (update.assignedDesignerId) {
-      update.assignedAt = hostId ? new Date() : call.startedAt;
+      update.assignedAt = call.startedAt;
       update.assignedHow = hostId ? "booking_host" : "auto";
     }
   }

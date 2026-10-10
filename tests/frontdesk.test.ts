@@ -5,6 +5,7 @@ import { suggestDesignerFor } from "@/lib/assignment";
 import { acknowledgeCall, assignCall, countsForFrontDesk, listForDesigner, listForFrontDesk, todayForFrontDesk, UserError } from "@/lib/calls";
 import { updateDesigner } from "@/lib/designers";
 import { env } from "@/lib/env";
+import { applyCalEvent } from "@/lib/bookings";
 import { ingestCall } from "@/lib/ingest";
 import { runDueJobs } from "@/lib/reminders";
 import { saveSettings } from "@/lib/settings";
@@ -319,5 +320,31 @@ describe("one-phone testing (TELEGRAM_REDIRECT_CHAT_ID)", () => {
   it("/id tells you your chat id", async () => {
     await handleUpdate({ message: { text: "/id", chat: { id: 5551234 } } });
     expect((await sends()).some((s) => /5551234/.test(s.text))).toBe(true);
+  });
+});
+
+describe("a booking does not bypass the front desk", () => {
+  it("in manual mode a call with a booking waits in To assign, with the Cal.com host only suggested", async () => {
+    await db.update(schema.designers).set({ calcomUser: "meera@aangan.test" }).where(eq(schema.designers.id, MEERA));
+    const { call } = await ingestCall(payloadFor("T01", { started_at: new Date().toISOString(), duration_sec: 200 }));
+    await applyCalEvent({ triggerEvent: "BOOKING_CREATED", payload: { uid: "host1", startTime: istIso("2026-10-12 11:00"), attendees: [{ phoneNumber: "+91 98000 00000" }], organizer: { email: "meera@aangan.test" } } });
+    const c = await callById(call.id);
+    expect(c.bookingId).toBe("host1");
+    expect(c.assignedDesignerId).toBeNull(); // still the front desk's decision
+    expect((await listForFrontDesk("assign")).map((x) => x.id)).toContain(call.id);
+    expect(await suggestDesignerFor(c)).toBe(MEERA); // but Meera is what they are offered
+  });
+
+  it("in automatic mode the host takes it straight away", async () => {
+    await saveSettings({ assignmentMode: "auto" });
+    await db.update(schema.designers).set({ calcomUser: "meera@aangan.test" }).where(eq(schema.designers.id, MEERA));
+    const { call } = await ingestCall(payloadFor("T01", { started_at: new Date().toISOString(), duration_sec: 200 }));
+    await applyCalEvent({ triggerEvent: "BOOKING_CREATED", payload: { uid: "host2", startTime: istIso("2026-10-12 11:00"), attendees: [{ phoneNumber: "+91 98000 00000" }], organizer: { email: "meera@aangan.test" } } });
+    expect((await callById(call.id)).assignedDesignerId).toBe(MEERA);
+  });
+
+  it("the caller's email is stored with the call", async () => {
+    const { call } = await ingestCall(payloadFor("T01", { caller_email: "Priya@Example.com" }));
+    expect((await callById(call.id)).callerEmail).toBe("priya@example.com");
   });
 });

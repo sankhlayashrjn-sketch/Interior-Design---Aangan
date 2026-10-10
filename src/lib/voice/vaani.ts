@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db, one, schema } from "@/db";
 import { env } from "@/lib/env";
+import { wishFromEntities } from "./book-after-call";
 import type { IngestPayload } from "@/lib/ingest";
 import type { VoiceProvider } from "./provider";
 
@@ -198,6 +199,8 @@ export class VaaniAdapter implements VoiceProvider {
     if (!record) fallback.from_number = await recallPhone(callId);
     const payload = toPayload(record ?? fallback, typeof d.transcript === "string" ? d.transcript : "");
     if (typeof d.recording_url === "string" && d.recording_url) payload.recording_url = recordingUrl(callId);
+    const email = wishFromEntities(d.entities).email;
+    if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) payload.caller_email = email;
     return [payload];
   }
 

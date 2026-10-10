@@ -65,6 +65,8 @@ export const calls = pgTable(
     source: text("source").notNull().default("phone"),
     /** Null when caller ID is withheld. */
     callerPhone: text("caller_phone"),
+    /** Given on the call (the voice agent asks for it to book). Optional. */
+    callerEmail: text("caller_email"),
     startedAt: ts("started_at").notNull(),
     durationSec: integer("duration_sec").notNull().default(0),
     transcript: text("transcript").notNull().default(""),

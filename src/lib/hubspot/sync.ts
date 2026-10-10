@@ -98,6 +98,7 @@ function contactProperties(call: Call): Record<string, string> {
     lastname: parts.slice(1).join(" ") || (call.callerPhone ? "" : "(caller ID withheld)"),
   };
   if (call.callerPhone) props.phone = call.callerPhone;
+  if (call.callerEmail) props.email = call.callerEmail;
   return props;
 }
 

@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { and, desc, eq, gte, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, one, schema } from "@/db";
+import { getSettings } from "@/lib/settings";
 import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
 import { emit } from "@/lib/hooks";
@@ -136,7 +137,9 @@ export async function applyCalEvent(evt: CalWebhook): Promise<BookingOutcome> {
   await db.update(schema.bookings).set({ callId: call.id }).where(eq(schema.bookings.id, booking.id));
   const patch: Partial<typeof call> = { bookingId: booking.calcomUid, bookedSlot: booking.startTime, bookingStatus: kind };
   // The Cal.com host owns the call, unless someone has already acknowledged it.
-  if (booking.hostDesignerId && !call.acknowledgedAt && call.assignedDesignerId !== booking.hostDesignerId) {
+  // In manual mode the front desk decides; the host is only suggested to them (see suggestDesignerFor).
+  const auto = (await getSettings()).assignmentMode === "auto";
+  if (auto && booking.hostDesignerId && !call.acknowledgedAt && call.assignedDesignerId !== booking.hostDesignerId) {
     patch.assignedDesignerId = booking.hostDesignerId;
   }
   await db.update(schema.calls).set(patch).where(eq(schema.calls.id, call.id));
