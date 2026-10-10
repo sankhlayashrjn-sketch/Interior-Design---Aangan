@@ -9,3 +9,7 @@ next-env.d.ts
 
 .vercel
 .env*
+
+# Local deliverables, not part of the app
+docs/components-map.*
+scripts/components-map.cjs
