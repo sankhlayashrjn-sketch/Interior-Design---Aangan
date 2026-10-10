@@ -17,7 +17,7 @@ import { planReminder } from "@/lib/working-hours";
 
 export type Call = typeof schema.calls.$inferSelect;
 
-/** The one shape every call source feeds in: Vaani adapter, Simulate screen, future channels. */
+/** The one shape every call source feeds in: Vaani adapter, future channels. */
 export const IngestPayloadSchema = z.object({
   external_id: z.string().min(1),
   caller_phone: z.string().nullable().optional(),

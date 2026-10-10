@@ -225,7 +225,7 @@ h3 {
   display: none !important;
 }
 
-/* Older pages (settings, simulate, login) use plain controls: soften them too. */
+/* Older pages (settings, login) use plain controls: soften them too. */
 input.border-line,
 select.border-line,
 textarea.border-line {

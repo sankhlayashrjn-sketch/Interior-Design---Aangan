@@ -9,11 +9,10 @@ const LINKS = [
   { key: "/", href: "/", label: "Front desk" },
   { key: "/designers", href: "/designers", label: "Designers" },
   { key: "/founder", href: "/founder", label: "Founder" },
-  { key: "/simulate", href: "/simulate", label: "Simulate call" },
   { key: "/settings", href: "/settings", label: "Settings" },
 ];
 
-/** The top bar: one raised slab with the brand, the five sections as pills (the current one pressed in), and who is viewing. */
+/** The top bar: one raised slab with the brand, the four sections as pills (the current one pressed in), and who is viewing. */
 export function AppHeader({ right }: { right: ReactNode }) {
   const path = usePathname();
   const selected = path === "/" || path.startsWith("/call/") ? "/" : (LINKS.find((l) => l.href !== "/" && path.startsWith(l.href))?.key ?? "");
