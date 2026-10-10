@@ -1,4 +1,5 @@
 import { asc } from "drizzle-orm";
+import { PageBanner } from "@/components/memphis/PageBanner";
 import { db, schema } from "@/db";
 import { AddDesignerForm, DesignerRow, SettingsForm } from "@/components/SettingsForms";
 import { integrationStatus } from "@/lib/env";
@@ -14,7 +15,7 @@ export default async function SettingsPage() {
 
   return (
     <div className="max-w-4xl">
-      <h1 className="mb-8 text-title font-medium">Settings</h1>
+      <PageBanner title="Settings" tone="yellow" subtitle="Hours, deadlines and people" />
 
       <section aria-labelledby="hours" className="mb-12">
         <h2 id="hours" className="mb-4 text-small font-medium text-mute">

@@ -1,9 +1,12 @@
 import type { ReactNode } from "react";
 import "@fontsource/inter/400.css";
 import "@fontsource/inter/500.css";
+import "@fontsource/inter/700.css";
+import "@fontsource/inter/800.css";
 import "./globals.css";
-import { Nav } from "@/components/Nav";
 import { DesignerSelect } from "@/components/DesignerSelect";
+import { AppHeader } from "@/components/memphis/AppHeader";
+import { MemphisProvider } from "@/components/memphis/Provider";
 import { activeDesigners } from "@/lib/calls";
 import { logoutAction } from "@/app/login/actions";
 import { authMode } from "@/lib/auth";
@@ -18,7 +21,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     return (
       <html lang="en">
         <body>
-          <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">{children}</main>
+          <MemphisProvider>
+            <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">{children}</main>
+          </MemphisProvider>
         </body>
       </html>
     );
@@ -28,25 +33,23 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   return (
     <html lang="en">
       <body>
-        <header className="border-b border-line">
-          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
-            <div className="flex flex-wrap items-center gap-x-8 gap-y-2">
-              <span className="font-medium">Aangan Studios Inquiry Tracker</span>
-              <Nav />
-            </div>
-            <div className="flex items-center gap-4">
-              <DesignerSelect designers={designers} currentId={me?.id ?? null} />
-              {authMode() === "password" && (
-                <form action={logoutAction}>
-                  <button type="submit" className="text-small text-mute hover:text-ink">
-                    Sign out
-                  </button>
-                </form>
-              )}
-            </div>
-          </div>
-        </header>
-        <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">{children}</main>
+        <MemphisProvider>
+          <AppHeader
+            right={
+              <>
+                <DesignerSelect designers={designers} currentId={me?.id ?? null} />
+                {authMode() === "password" && (
+                  <form action={logoutAction}>
+                    <button type="submit" className="text-small font-bold underline underline-offset-4">
+                      Sign out
+                    </button>
+                  </form>
+                )}
+              </>
+            }
+          />
+          <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">{children}</main>
+        </MemphisProvider>
       </body>
     </html>
   );

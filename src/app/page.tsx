@@ -1,11 +1,14 @@
-import Link from "next/link";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { CallDetail } from "@/components/CallDetail";
-import { assignCell, CallList } from "@/components/CallList";
-import { FilterBar, hasFilters, type Filters } from "@/components/FilterBar";
+import { FilterBar, type Filters } from "@/components/FilterBar";
+import { CallTable } from "@/components/memphis/CallTable";
+import { PageBanner } from "@/components/memphis/PageBanner";
+import { StatStrip } from "@/components/memphis/StatStrip";
+import { TabsNav } from "@/components/memphis/TabsNav";
 import { eligibleDesigners, suggestDesignerFor, workloads } from "@/lib/assignment";
 import { activeDesigners, countsForFrontDesk, getDetail, listForFrontDesk, todayForFrontDesk, type FrontDeskTab, type SortKey } from "@/lib/calls";
 import { fmtDue } from "@/lib/format";
+import { toRow } from "@/lib/rows";
 
 const TABS: { key: FrontDeskTab; label: string }[] = [
   { key: "assign", label: "To assign" },
@@ -32,7 +35,7 @@ export default async function FrontDesk({ searchParams }: { searchParams: Promis
     overdue: sp.overdue === "1",
     afterHours: sp.afterHours === "1",
   };
-  const rows = await listForFrontDesk(tab, now, {
+  const calls = await listForFrontDesk(tab, now, {
     q: filters.q,
     status: (filters.status || undefined) as never,
     sort: filters.sort || undefined,
@@ -61,58 +64,41 @@ export default async function FrontDesk({ searchParams }: { searchParams: Promis
     assign = { designers: designers.map((d) => ({ id: d.id, name: d.name, load: load.get(d.id) ?? 0 })), suggestedId };
   }
 
+  const rows = calls.map((c) => {
+    let last: { text: string; overdue: boolean };
+    if (tab === "assign") {
+      const d = c.assignDueAt ? fmtDue(c.assignDueAt, null, now) : null;
+      last = { text: d?.text ?? "–", overdue: d?.state === "overdue" };
+    } else {
+      last = { text: c.assignedDesignerId ? (c.acknowledgedAt ? "Acknowledged" : fmtDue(c.dueAt, null, now).text) : "–", overdue: false };
+    }
+    const sub = tab === "assigned" || tab === "all" ? (c.assignedDesignerId ? `With ${names.get(c.assignedDesignerId) ?? "a designer"}` : "Not assigned yet") : undefined;
+    return toRow(c, now, href({ tab, open: String(c.id) }), last, sub);
+  });
+
   return (
     <div>
       <AutoRefresh />
-      <div className="mb-6 flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-title font-medium">Front desk</h1>
-        <p className="text-small text-mute">{counts.assign} waiting to be assigned</p>
-      </div>
+      <PageBanner title="Front desk" tone="pink" subtitle={counts.assign === 0 ? "Everything is assigned. Nice." : `${counts.assign} ${counts.assign === 1 ? "call is" : "calls are"} waiting for a designer`} />
 
-      <p className="mb-6 flex flex-wrap gap-x-5 gap-y-1 text-small" aria-label="Today">
-        <Link href="/?tab=assign&overdue=1" className={today.overdue > 0 ? "font-medium text-accent" : "text-mute"}>
-          Overdue {today.overdue}
-        </Link>
-        <Link href="/?tab=assign&booked=1" className="text-mute hover:text-ink">
-          Booked, not assigned {today.bookedToday}
-        </Link>
-        <Link href="/?tab=assign&afterHours=1" className="text-mute hover:text-ink">
-          Came in after hours {today.afterHours}
-        </Link>
-      </p>
+      <StatStrip
+        stats={[
+          { label: "Overdue", value: today.overdue, tone: "pink", href: "/?tab=assign&overdue=1", hot: true },
+          { label: "Booked, not assigned", value: today.bookedToday, tone: "yellow", href: "/?tab=assign&booked=1" },
+          { label: "Came in after hours", value: today.afterHours, tone: "teal", href: "/?tab=assign&afterHours=1" },
+        ]}
+      />
 
-      <section aria-label="Calls">
-        <div role="tablist" aria-label="Call lists" className="mb-2 flex flex-wrap gap-x-6 border-b border-line">
-          {TABS.map((t) => (
-            <Link
-              key={t.key}
-              href={href({ tab: t.key, open: "" })}
-              role="tab"
-              aria-selected={t.key === tab}
-              className={`-mb-px border-b-2 py-2 ${t.key === tab ? "border-ink font-medium" : "border-transparent text-mute hover:text-ink"}`}
-            >
-              {t.label} <span className="text-small text-mute">{counts[t.key]}</span>
-            </Link>
-          ))}
-        </div>
+      <TabsNav active={tab} tabs={TABS.map((t) => ({ key: t.key, label: t.label, count: counts[t.key], href: href({ tab: t.key, open: "" }) }))} />
+      <FilterBar tab={tab} filters={filters} />
 
-        <FilterBar tab={tab} filters={filters} />
-
-        {rows.length === 0 ? (
-          <p className="py-8 text-mute">{hasFilters(filters) ? "No calls match these filters." : tab === "assign" ? "Every call has a designer. Nothing to assign." : "No calls here yet."}</p>
-        ) : (
-          <CallList
-            rows={rows}
-            now={now}
-            openId={openId}
-            hrefFor={(id) => href({ tab, open: id ? String(id) : "" })}
-            detail={detail ? <CallDetail detail={detail} now={now} assign={assign} /> : null}
-            lastLabel={tab === "assign" ? "Assign by" : "Status"}
-            subline={tab === "assigned" || tab === "all" ? (c) => c.assignedDesignerId ? `With ${names.get(c.assignedDesignerId) ?? "a designer"}` : "Not assigned yet" : undefined}
-            lastCell={(c) => (tab === "assign" ? assignCell(c, now) : { text: c.assignedDesignerId ? (c.acknowledgedAt ? "Acknowledged" : fmtDue(c.dueAt, null, now).text) : "–", overdue: false })}
-          />
-        )}
-      </section>
+      <CallTable
+        rows={rows}
+        openId={openId}
+        closeHref={href({ tab, open: "" })}
+        lastLabel={tab === "assign" ? "Assign by" : "Status"}
+        detail={detail ? <CallDetail detail={detail} now={now} assign={assign} /> : null}
+      />
     </div>
   );
 }

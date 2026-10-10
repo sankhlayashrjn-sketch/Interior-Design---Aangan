@@ -1,19 +1,25 @@
-import { FLAG_LABEL, STATUS_LABEL } from "@/lib/format";
+"use client";
 
-/** Subtle tinted chip. Always carries a text label; colour is never the only signal. */
-const TINT: Record<string, string> = {
-  qualified: "bg-[#e8f1ea] text-[#1f4d2c]",
-  needs_attention: "bg-[#f6eed8] text-[#6a4a0c]",
-  disqualified: "bg-[#ececea] text-[#444444]",
-  yet_to_be_processed: "bg-[#e9edf2] text-[#3c4858]",
-  flag: "bg-transparent text-mute border border-line",
+import { Tag } from "antd";
+import { FLAG_LABEL, STATUS_LABEL } from "@/lib/format";
+import { M } from "@/components/memphis/theme";
+
+/** Memphis tags: flat colour, black outline. Always carries a text label; colour is never the only signal. */
+const FILL: Record<string, { bg: string; fg: string }> = {
+  qualified: { bg: M.teal, fg: M.ink },
+  needs_attention: { bg: M.yellow, fg: M.ink },
+  disqualified: { bg: M.pink, fg: M.ink },
+  yet_to_be_processed: { bg: M.blue, fg: "#fff" },
 };
 
+const base = { border: `2px solid ${M.ink}`, borderRadius: 999, fontWeight: 700, margin: 0, paddingInline: 10 } as const;
+
 export function StatusChip({ status }: { status: string }) {
-  return <span className={`inline-block whitespace-nowrap rounded px-2 py-0.5 text-small font-medium ${TINT[status] ?? TINT.disqualified}`}>{STATUS_LABEL[status] ?? status}</span>;
+  const c = FILL[status] ?? FILL.disqualified;
+  return <Tag style={{ ...base, background: c.bg, color: c.fg }}>{STATUS_LABEL[status] ?? status}</Tag>;
 }
 
 export function FlagChip({ flag }: { flag: string }) {
   if (flag === "none" || !FLAG_LABEL[flag]) return null;
-  return <span className={`inline-block whitespace-nowrap rounded px-2 py-0.5 text-small ${TINT.flag}`}>{FLAG_LABEL[flag]}</span>;
+  return <Tag style={{ ...base, background: "#fff", color: M.ink, fontWeight: 600 }}>{FLAG_LABEL[flag]}</Tag>;
 }

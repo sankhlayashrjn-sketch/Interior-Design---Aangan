@@ -1,8 +1,12 @@
+"use client";
+
+import { Alert, Collapse, Descriptions, Table } from "antd";
 import { AcknowledgeButton } from "@/components/AcknowledgeButton";
 import { AssignForm, type AssignOption } from "@/components/AssignForm";
 import { FlagChip, StatusChip } from "@/components/Chip";
 import { NoteForm } from "@/components/NoteForm";
 import { OverrideForm } from "@/components/OverrideForm";
+import { M } from "@/components/memphis/theme";
 import type { getDetail } from "@/lib/calls";
 import { fmtDateTime, fmtDue, PROPERTY_LABEL } from "@/lib/format";
 import { splitTurns } from "@/lib/guardrail";
@@ -10,228 +14,245 @@ import { CRITERIA } from "@/lib/rubric";
 
 type Detail = NonNullable<Awaited<ReturnType<typeof getDetail>>>;
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="border-t border-line py-5">
-      <h3 className="mb-3 text-small font-medium text-mute">{title}</h3>
-      {children}
-    </section>
-  );
-}
-
-function Field({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-[8.5rem_1fr] gap-3 py-1">
-      <dt className="text-mute">{label}</dt>
-      <dd>{value || <span className="text-mute">Not stated</span>}</dd>
-    </div>
-  );
-}
-
 export interface AssignPanel {
   designers: AssignOption[];
   suggestedId: number | null;
 }
 
+const dim = { color: "#3d3d57" } as const;
+
 /**
- * One call in full. The front desk sees the assignment control; designers see Acknowledge. Everything else
- * (handoff note, transcript, score, override, notes, timeline) is the same for both, so designers can audit it.
+ * One call in full, as a stack of drop-downs: handoff note, transcript, booking, score, notes, timeline, override.
+ * The front desk sees the assignment control; designers see Acknowledge. The sections are the same for both, so a
+ * designer can audit the call (read the transcript, check the score) before acknowledging it.
  */
 export function CallDetail({ detail, now = new Date(), assign }: { detail: Detail; now?: Date; assign?: AssignPanel }) {
-  const { call, assignedTo, assignedByName, bookingWith, acknowledgedByName, overrides, notes, timeline, linked } = detail;
+  const { call, assignedTo, assignedByName, acknowledgedByName, bookingWith, overrides, notes, timeline, linked } = detail;
   const due = fmtDue(call.dueAt, call.acknowledgedAt, now);
   const processed = call.status !== "yet_to_be_processed";
   const turns = splitTurns(call.transcript);
 
-  return (
-    <article aria-label="Call detail">
-      <header className="pb-5">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-title font-medium">{call.callerName ?? call.callerPhone ?? "Unknown caller"}</h2>
-          <StatusChip status={call.status} />
-          <FlagChip flag={call.flag} />
-        </div>
-        <p className="mt-1 text-small text-mute">
-          {fmtDateTime(call.startedAt)} · {Math.round(call.durationSec / 60 * 10) / 10} min · {call.callerPhone ?? "Caller ID withheld"}{call.callerEmail ? ` · ${call.callerEmail}` : ""} · {assignedTo ? `Assigned to ${assignedTo}${assignedByName ? ` by ${assignedByName}` : ""}` : "Not assigned yet"}
-          {call.afterHours ? " · After hours" : ""}
-        </p>
-        {call.recordingUrl && (
-          <p className="mt-1 text-small">
-            <a href={call.recordingUrl} target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">
-              Listen to the call
-            </a>
-          </p>
-        )}
-        {call.reason && call.status !== "qualified" && (
-          <p className="mt-3">
-            <span className="font-medium">Why: </span>
-            {call.reason}
-          </p>
-        )}
-      </header>
+  const field = (label: string, value: React.ReactNode) => ({ key: label, label, children: value || <span style={dim}>Not stated</span> });
 
-      {processed && assign && !call.acknowledgedAt && call.status !== "disqualified" && (
-        <div className="pb-5">
-          <AssignForm callId={call.id} designers={assign.designers} suggestedId={assign.suggestedId} currentId={call.assignedDesignerId} />
-        </div>
-      )}
-
-      {processed && !assign && call.assignedDesignerId && (
-        <div className="flex flex-wrap items-center gap-4 pb-5">
-          {call.acknowledgedAt ? (
-            <p className="text-mute">Acknowledged by {acknowledgedByName} · {due.text.replace("Acknowledged ", "")}</p>
-          ) : (
-            <AcknowledgeButton callId={call.id} />
-          )}
-          {!call.acknowledgedAt && <p className={due.state === "overdue" ? "font-medium text-accent" : "text-mute"}>{due.text}</p>}
-        </div>
-      )}
-
-      {call.guardrailHits && call.guardrailHits.length > 0 && (
-        <p className="mb-2 border-l-2 border-ink pl-3 text-small">
-          Price guardrail: {call.guardrailHits.join("; ")}. Do not quote prices; the designer gives a quote at the consultation.
-        </p>
-      )}
-
-      {!processed ? (
-        <Section title="Handoff note">
-          <p className="text-mute">Still being processed.</p>
-        </Section>
+  const items = [
+    {
+      key: "handoff",
+      label: <b>Handoff note</b>,
+      children: !processed ? (
+        <p style={dim}>Still being processed.</p>
       ) : (
-        <>
-          <Section title="Handoff note">
-            <p className="whitespace-pre-line">{call.summary}</p>
-            <dl className="mt-4">
-              <Field label="Already asked" value={call.alreadyAsked} />
-              <Field label="Next step" value={call.suggestedNextStep} />
-            </dl>
-          </Section>
-
-          <Section title="Booking">
-            {call.bookedSlot ? (
-              <p>
-                {fmtDateTime(call.bookedSlot)}
-                {bookingWith ? <span> · with {bookingWith}</span> : null}
-                {call.bookingStatus && call.bookingStatus !== "booked" ? <span className="text-mute"> · {call.bookingStatus}</span> : null}
-                {call.score !== null && (
-                  <span className="text-mute">
-                    {" "}
-                    · this caller scored {call.score} ({call.status.replace(/_/g, " ")})
-                  </span>
-                )}
-              </p>
-            ) : (
-              <p className="text-mute">No slot booked.</p>
-            )}
-          </Section>
-
-          <Section title="Notes">
-            {notes.length === 0 ? (
-              <p className="text-mute">No notes yet.</p>
-            ) : (
-              <ul className="space-y-3">
-                {notes.map((n) => (
-                  <li key={n.id}>
-                    <p className="whitespace-pre-line">{n.body}</p>
-                    <p className="text-small text-mute">
-                      {n.byName ?? "Someone"} · {fmtDateTime(n.createdAt)}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <NoteForm callId={call.id} />
-          </Section>
-
-          <Section title="Extracted fields">
-            <dl>
-              <Field label="Name" value={call.callerName} />
-              <Field label="Phone" value={call.callerPhone ?? "Caller ID withheld"} />
-              <Field label="Email" value={call.callerEmail} />
-              <Field label="Location" value={call.location} />
-              <Field label="Property" value={PROPERTY_LABEL(call.propertyType)} />
-              <Field label="Area" value={call.areaSqft ? `${call.areaSqft.toLocaleString("en-IN")} sq ft` : null} />
-              <Field label="Scope" value={call.scope} />
-              <Field label="Timeline" value={call.timeline} />
-              <Field label="Budget (caller's words)" value={call.budget} />
-            </dl>
-          </Section>
-
-          <Section title={`Score${call.score !== null ? `: ${call.score} / 100` : ": not scored"}`}>
-            {call.scoreBreakdown ? (
-              <table className="w-full text-left">
-                <thead className="sr-only">
-                  <tr>
-                    <th>Criterion</th>
-                    <th>Points</th>
-                    <th>Evidence</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {CRITERIA.map((c) => {
-                    const b = call.scoreBreakdown![c.key];
-                    return (
-                      <tr key={c.key} className="border-t border-line align-top first:border-t-0">
-                        <td className="whitespace-nowrap py-2 pr-4">{c.label}</td>
-                        <td className="whitespace-nowrap py-2 pr-4 tabular-nums">
-                          {b.points} / {b.max}
-                        </td>
-                        <td className="py-2 text-mute">{b.evidence}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            ) : (
-              <p className="text-mute">
-                {call.flag === "existing_client" ? "Not a new enquiry, so it is not scored." : "No breakdown available."}
-              </p>
-            )}
-          </Section>
-        </>
-      )}
-
-      {processed && (
-        <Section title="Status override">
-          <OverrideForm callId={call.id} current={call.status} />
-          {overrides.length > 0 && (
-            <ul className="mt-4 space-y-2 text-small">
-              {overrides.map((o) => (
-                <li key={o.id} className="text-mute">
-                  {fmtDateTime(o.at)} · {o.byName ?? "Unknown"} changed {o.fromStatus.replace(/_/g, " ")} to {o.toStatus.replace(/_/g, " ")}: {o.reason}
+        <div className="space-y-3">
+          {call.reason && call.status !== "qualified" && (
+            <p>
+              <b>Why: </b>
+              {call.reason}
+            </p>
+          )}
+          <p className="whitespace-pre-line">{call.summary}</p>
+          <Descriptions column={1} size="small" colon={false} items={[field("Already asked", call.alreadyAsked), field("Next step", call.suggestedNextStep)]} />
+        </div>
+      ),
+    },
+    {
+      key: "transcript",
+      label: <b>Transcript {turns.length > 0 && <span style={dim}>({turns.length} turns)</span>}</b>,
+      children: (
+        <div>
+          {linked && <p className="mb-3 text-small" style={dim}>Follows an earlier call from the same number at {fmtDateTime(linked.startedAt)}.</p>}
+          {turns.length === 0 ? (
+            <p style={dim}>No transcript was captured.</p>
+          ) : (
+            <ol className="space-y-2">
+              {turns.map((t, i) => (
+                <li key={i} className={`flex ${t.speaker === "agent" ? "justify-start" : "justify-end"}`}>
+                  <div
+                    className="max-w-[85%] rounded-[14px] border-2 border-ink px-3 py-2"
+                    style={{ background: t.speaker === "agent" ? M.yellow : M.teal, boxShadow: `3px 3px 0 ${M.ink}` }}
+                  >
+                    <div className="text-[11px] font-extrabold uppercase tracking-wide">{t.speaker === "agent" ? "Agent" : "Caller"}</div>
+                    <div>{t.text}</div>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "booking",
+      label: <b>Booking</b>,
+      children: call.bookedSlot ? (
+        <p>
+          <b>{fmtDateTime(call.bookedSlot)}</b>
+          {bookingWith ? <span> · with {bookingWith}</span> : null}
+          {call.bookingStatus && call.bookingStatus !== "booked" ? <span style={dim}> · {call.bookingStatus}</span> : null}
+        </p>
+      ) : (
+        <p style={dim}>No slot booked.</p>
+      ),
+    },
+    {
+      key: "fields",
+      label: <b>Caller details</b>,
+      children: (
+        <Descriptions
+          column={{ xs: 1, md: 2 }}
+          size="small"
+          bordered
+          items={[
+            field("Name", call.callerName),
+            field("Phone", call.callerPhone ?? "Caller ID withheld"),
+            field("Email", call.callerEmail),
+            field("Location", call.location),
+            field("Property", PROPERTY_LABEL(call.propertyType)),
+            field("Area", call.areaSqft ? `${call.areaSqft.toLocaleString("en-IN")} sq ft` : null),
+            field("Scope", call.scope),
+            field("Timeline", call.timeline),
+            field("Budget (caller's words)", call.budget),
+          ]}
+        />
+      ),
+    },
+    {
+      key: "score",
+      label: <b>Score {call.score !== null ? `${call.score} / 100` : "(not scored)"}</b>,
+      children: call.scoreBreakdown ? (
+        <Table
+          size="small"
+          pagination={false}
+          rowKey="key"
+          scroll={{ x: 520 }}
+          dataSource={CRITERIA.map((c) => ({ key: c.key, label: c.label, ...call.scoreBreakdown![c.key] }))}
+          columns={[
+            { title: "Criterion", dataIndex: "label", width: 200 },
+            { title: "Points", width: 90, render: (_: unknown, r: { points: number; max: number }) => <b>{r.points} / {r.max}</b> },
+            { title: "Evidence", dataIndex: "evidence", render: (v: string) => <span style={dim}>{v}</span> },
+          ]}
+        />
+      ) : (
+        <p style={dim}>{call.flag === "existing_client" ? "Not a new enquiry, so it is not scored." : "No breakdown available."}</p>
+      ),
+    },
+    {
+      key: "notes",
+      label: <b>Notes {notes.length > 0 && <span style={dim}>({notes.length})</span>}</b>,
+      children: (
+        <div>
+          {notes.length === 0 ? (
+            <p style={dim}>No notes yet.</p>
+          ) : (
+            <ul className="space-y-3">
+              {notes.map((n) => (
+                <li key={n.id} className="border-l-4 border-purple pl-3">
+                  <p className="whitespace-pre-line">{n.body}</p>
+                  <p className="text-small" style={dim}>
+                    {n.byName ?? "Someone"} · {fmtDateTime(n.createdAt)}
+                  </p>
                 </li>
               ))}
             </ul>
           )}
-        </Section>
-      )}
-
-      <Section title="Timeline">
-        <ol className="space-y-2">
+          <NoteForm callId={call.id} />
+        </div>
+      ),
+    },
+    {
+      key: "timeline",
+      label: <b>Timeline</b>,
+      children: (
+        <ol className="space-y-3">
           {timeline.map((e, i) => (
-            <li key={i} className="grid grid-cols-[9.5rem_1fr] gap-3">
-              <span className="text-small text-mute">{fmtDateTime(e.at).replace(" IST", "")}</span>
-              <span>{e.text}</span>
+            <li key={i} className="flex items-start gap-3">
+              <span className="mt-1.5 inline-block h-3.5 w-3.5 shrink-0 rounded-full border-2 border-ink" style={{ background: [M.pink, M.yellow, M.teal, M.blue][i % 4] }} />
+              <span>
+                <span className="text-small font-semibold" style={dim}>
+                  {fmtDateTime(e.at).replace(" IST", "")}
+                </span>
+                <br />
+                {e.text}
+              </span>
             </li>
           ))}
         </ol>
-      </Section>
+      ),
+    },
+    ...(processed
+      ? [
+          {
+            key: "override",
+            label: <b>Change the status</b>,
+            children: (
+              <div>
+                <OverrideForm callId={call.id} current={call.status} />
+                {overrides.length > 0 && (
+                  <ul className="mt-4 space-y-2 text-small">
+                    {overrides.map((o) => (
+                      <li key={o.id} style={dim}>
+                        {fmtDateTime(o.at)} · {o.byName ?? "Unknown"} changed {o.fromStatus.replace(/_/g, " ")} to {o.toStatus.replace(/_/g, " ")}: {o.reason}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ),
+          },
+        ]
+      : []),
+  ];
 
-      <Section title="Transcript">
-        {linked && <p className="mb-3 text-small text-mute">Follows an earlier call from the same number at {fmtDateTime(linked.startedAt)}.</p>}
-        {turns.length === 0 ? (
-          <p className="text-mute">No transcript was captured.</p>
-        ) : (
-          <ol className="space-y-3">
-            {turns.map((t, i) => (
-              <li key={i} className="grid grid-cols-[4.5rem_1fr] gap-3">
-                <span className="text-small text-mute">{t.speaker === "agent" ? "Agent" : "Caller"}</span>
-                <span>{t.text}</span>
-              </li>
-            ))}
-          </ol>
+  const canAssign = processed && assign && !call.acknowledgedAt && call.status !== "disqualified";
+  const canAcknowledge = processed && !assign && call.assignedDesignerId;
+
+  return (
+    <article aria-label="Call detail" className="space-y-4 py-2">
+      <header>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-[24px] font-extrabold leading-tight">{call.callerName ?? call.callerPhone ?? "Unknown caller"}</h2>
+          <StatusChip status={call.status} />
+          <FlagChip flag={call.flag} />
+        </div>
+        <p className="mt-1 text-small" style={dim}>
+          {fmtDateTime(call.startedAt)} · {Math.round((call.durationSec / 60) * 10) / 10} min · {call.callerPhone ?? "Caller ID withheld"}
+          {call.callerEmail ? ` · ${call.callerEmail}` : ""} ·{" "}
+          {assignedTo ? `Assigned to ${assignedTo}${assignedByName ? ` by ${assignedByName}` : ""}` : "Not assigned yet"}
+          {call.afterHours ? " · After hours" : ""}
+        </p>
+        {call.recordingUrl && (
+          <p className="mt-1">
+            <a href={call.recordingUrl} target="_blank" rel="noopener noreferrer" className="font-bold underline underline-offset-4">
+              Listen to the call
+            </a>
+          </p>
         )}
-      </Section>
+      </header>
+
+      {canAssign && (
+        <div className="rounded-[14px] border-2 border-ink p-4" style={{ background: M.yellow, boxShadow: `4px 4px 0 ${M.ink}` }}>
+          <AssignForm callId={call.id} designers={assign!.designers} suggestedId={assign!.suggestedId} currentId={call.assignedDesignerId} />
+        </div>
+      )}
+
+      {canAcknowledge && (
+        <div className="flex flex-wrap items-center gap-4 rounded-[14px] border-2 border-ink p-4" style={{ background: call.acknowledgedAt ? M.teal : M.yellow, boxShadow: `4px 4px 0 ${M.ink}` }}>
+          {call.acknowledgedAt ? (
+            <p className="font-bold">
+              Acknowledged by {acknowledgedByName} · {due.text.replace("Acknowledged ", "")}
+            </p>
+          ) : (
+            <>
+              <AcknowledgeButton callId={call.id} />
+              <p className={due.state === "overdue" ? "font-extrabold text-accent" : "font-semibold"}>{due.text}</p>
+            </>
+          )}
+        </div>
+      )}
+
+      {call.guardrailHits && call.guardrailHits.length > 0 && (
+        <Alert type="warning" showIcon={false} message={`Price guardrail: ${call.guardrailHits.join("; ")}. Do not quote prices; the designer gives a quote at the consultation.`} style={{ border: `2px solid ${M.ink}` }} />
+      )}
+
+      <Collapse items={items} defaultActiveKey={["handoff"]} style={{ background: "#fff", border: `2px solid ${M.ink}` }} />
     </article>
   );
 }

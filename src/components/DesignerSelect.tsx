@@ -1,28 +1,32 @@
 "use client";
 
-import { useRef } from "react";
+import { Select } from "antd";
+import { useRef, useState } from "react";
 import { selectDesigner } from "@/app/actions";
 
+/** "Viewing as": picks who you act as in this demo. Submits once, only when you choose someone. */
 export function DesignerSelect({ designers, currentId }: { designers: { id: number; name: string }[]; currentId: number | null }) {
   const form = useRef<HTMLFormElement>(null);
+  const hidden = useRef<HTMLInputElement>(null);
+  const [value, setValue] = useState<number | null>(currentId);
   return (
     <form ref={form} action={selectDesigner} className="flex items-center gap-2">
-      <label htmlFor="designer" className="text-small text-mute">
+      <input ref={hidden} type="hidden" name="designerId" defaultValue={currentId ?? ""} />
+      <label htmlFor="designer" className="text-small font-semibold">
         Viewing as
       </label>
-      <select
+      <Select
         id="designer"
-        name="designerId"
-        defaultValue={currentId ?? undefined}
-        onChange={() => form.current?.requestSubmit()}
-        className="rounded border border-line bg-paper px-2 py-1 text-small"
-      >
-        {designers.map((d) => (
-          <option key={d.id} value={d.id}>
-            {d.name}
-          </option>
-        ))}
-      </select>
+        value={value ?? undefined}
+        onChange={(v: number) => {
+          setValue(v);
+          if (hidden.current) hidden.current.value = String(v); // set the form field directly so the submit below sees it
+          form.current?.requestSubmit();
+        }}
+        options={designers.map((d) => ({ value: d.id, label: d.name }))}
+        style={{ minWidth: 190 }}
+        popupMatchSelectWidth={false}
+      />
     </form>
   );
 }

@@ -1,9 +1,15 @@
 import Link from "next/link";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { CallDetail } from "@/components/CallDetail";
-import { ackCell, CallList } from "@/components/CallList";
-import { FilterBar, hasFilters, type Filters } from "@/components/FilterBar";
+import { FilterBar, type Filters } from "@/components/FilterBar";
+import { CallTable } from "@/components/memphis/CallTable";
+import { PageBanner } from "@/components/memphis/PageBanner";
+import { StatStrip } from "@/components/memphis/StatStrip";
+import { TabsNav } from "@/components/memphis/TabsNav";
+import { M } from "@/components/memphis/theme";
 import { activeDesigners, countsForDesigner, getDetail, listForDesigner, todayForDesigner, type SortKey, type Tab } from "@/lib/calls";
+import { fmtDue } from "@/lib/format";
+import { toRow } from "@/lib/rows";
 import { currentDesigner } from "@/lib/session";
 
 const TABS: { key: Tab; label: string }[] = [
@@ -21,7 +27,7 @@ type Params = { tab?: string; who?: string; open?: string; q?: string; status?: 
 export default async function Designers({ searchParams }: { searchParams: Promise<Params> }) {
   const sp = await searchParams;
   const designers = (await activeDesigners()).filter((d) => d.role === "designer");
-  if (designers.length === 0) return <p className="text-mute">No designers yet. Add one in Settings.</p>;
+  if (designers.length === 0) return <p>No designers yet. Add one in Settings.</p>;
 
   // A designer sees their own calls by default; anyone else (front desk, founder) sees everyone's.
   const me = await currentDesigner();
@@ -40,7 +46,7 @@ export default async function Designers({ searchParams }: { searchParams: Promis
     overdue: sp.overdue === "1",
     afterHours: sp.afterHours === "1",
   };
-  const rows = await listForDesigner(who, tab, now, {
+  const calls = await listForDesigner(who, tab, now, {
     q: filters.q,
     status: (filters.status || undefined) as never,
     sort: filters.sort || undefined,
@@ -63,67 +69,46 @@ export default async function Designers({ searchParams }: { searchParams: Promis
   const openId = Number(sp.open) || null;
   const detail = openId ? await getDetail(openId) : null;
 
+  const rows = calls.map((c) => {
+    const d = fmtDue(c.dueAt, c.acknowledgedAt, now);
+    return toRow(c, now, href({ tab, open: String(c.id) }), { text: d.text, overdue: d.state === "overdue" }, who === "all" ? `With ${names.get(c.assignedDesignerId ?? -1) ?? "a designer"}` : undefined);
+  });
+
   return (
     <div>
       <AutoRefresh />
-      <div className="mb-6 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
-        <h1 className="text-title font-medium">{whoName}</h1>
-        <p className="text-small text-mute">{counts.pending} waiting for acknowledgement</p>
-      </div>
+      <PageBanner title={whoName} tone="teal" subtitle={`${counts.pending} waiting for acknowledgement`} />
 
-      <nav aria-label="Designer" className="mb-4 flex flex-wrap gap-x-4 gap-y-1 text-small">
-        {[{ id: "all" as const, name: "Everyone" }, ...designers].map((d) => (
-          <Link key={d.id} href={`/designers?who=${d.id}&tab=${tab}`} aria-current={String(d.id) === whoParam ? "true" : undefined} className={String(d.id) === whoParam ? "font-medium text-ink" : "text-mute hover:text-ink"}>
-            {d.name}
-          </Link>
-        ))}
+      <nav aria-label="Designer" className="mb-6 flex flex-wrap gap-2">
+        {[{ id: "all" as const, name: "Everyone" }, ...designers].map((d) => {
+          const on = String(d.id) === whoParam;
+          return (
+            <Link
+              key={d.id}
+              href={`/designers?who=${d.id}&tab=${tab}`}
+              aria-current={on ? "true" : undefined}
+              className="rounded-full border-2 border-ink px-4 py-1.5 text-small font-bold text-ink no-underline"
+              style={{ background: on ? M.pink : "#fff", boxShadow: on ? `3px 3px 0 ${M.ink}` : "none" }}
+            >
+              {d.name}
+            </Link>
+          );
+        })}
       </nav>
 
-      <p className="mb-6 flex flex-wrap gap-x-5 gap-y-1 text-small" aria-label="Today">
-        <Link href={href({ tab: "pending", overdue: "1", open: "" })} className={today.overdue > 0 ? "font-medium text-accent" : "text-mute"}>
-          Overdue {today.overdue}
-        </Link>
-        <span className="text-mute">Due within the hour {today.dueSoon}</span>
-        <Link href={href({ tab: "all", booked: "1", open: "" })} className="text-mute hover:text-ink">
-          Booked today {today.bookedToday}
-        </Link>
-        <Link href={href({ tab: "pending", afterHours: "1", open: "" })} className="text-mute hover:text-ink">
-          Waiting from after hours {today.afterHoursWaiting}
-        </Link>
-      </p>
+      <StatStrip
+        stats={[
+          { label: "Overdue", value: today.overdue, tone: "pink", href: href({ tab: "pending", overdue: "1", open: "" }), hot: true },
+          { label: "Due within the hour", value: today.dueSoon, tone: "yellow" },
+          { label: "Booked today", value: today.bookedToday, tone: "teal", href: href({ tab: "all", booked: "1", open: "" }) },
+          { label: "Waiting from after hours", value: today.afterHoursWaiting, tone: "blue", href: href({ tab: "pending", afterHours: "1", open: "" }) },
+        ]}
+      />
 
-      <section aria-label="Calls">
-        <div role="tablist" aria-label="Call lists" className="mb-2 flex flex-wrap gap-x-6 border-b border-line">
-          {TABS.map((t) => (
-            <Link
-              key={t.key}
-              href={href({ tab: t.key, open: "" })}
-              role="tab"
-              aria-selected={t.key === tab}
-              className={`-mb-px border-b-2 py-2 ${t.key === tab ? "border-ink font-medium" : "border-transparent text-mute hover:text-ink"}`}
-            >
-              {t.label} <span className="text-small text-mute">{counts[t.key]}</span>
-            </Link>
-          ))}
-        </div>
+      <TabsNav active={tab} tabs={TABS.map((t) => ({ key: t.key, label: t.label, count: counts[t.key], href: href({ tab: t.key, open: "" }) }))} />
+      <FilterBar tab={tab} filters={filters} basePath="/designers" hidden={{ who: whoParam }} />
 
-        <FilterBar tab={tab} filters={filters} basePath="/designers" hidden={{ who: whoParam }} />
-
-        {rows.length === 0 ? (
-          <p className="py-8 text-mute">{hasFilters(filters) ? "No calls match these filters." : tab === "pending" ? "Nothing is waiting for acknowledgement." : "No calls here yet."}</p>
-        ) : (
-          <CallList
-            rows={rows}
-            now={now}
-            openId={openId}
-            hrefFor={(id) => href({ open: id ? String(id) : "" , tab })}
-            detail={detail ? <CallDetail detail={detail} now={now} /> : null}
-            lastLabel="Deadline"
-            lastCell={(c) => ackCell(c, now)}
-            subline={who === "all" ? (c) => `With ${names.get(c.assignedDesignerId ?? -1) ?? "a designer"}` : undefined}
-          />
-        )}
-      </section>
+      <CallTable rows={rows} openId={openId} closeHref={href({ tab, open: "" })} lastLabel="Deadline" detail={detail ? <CallDetail detail={detail} now={now} /> : null} />
     </div>
   );
 }

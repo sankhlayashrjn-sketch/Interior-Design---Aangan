@@ -1,6 +1,9 @@
-import Link from "next/link";
+"use client";
+
+import { Button, Checkbox, Input, Select } from "antd";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import type { SortKey } from "@/lib/calls";
-import { STATUS_LABEL } from "@/lib/format";
 
 export interface Filters {
   q: string;
@@ -13,51 +16,68 @@ export interface Filters {
 
 export const hasFilters = (f: Filters) => !!(f.q || f.status || f.sort || f.booked || f.overdue || f.afterHours);
 
-const field = "rounded border border-line bg-paper px-2 py-1.5 text-small";
-
-/** Search and filters. A plain GET form, so it works without JavaScript and every view has a link you can share. */
+/** Search and filters. Each change goes to the address bar, so every view can be shared and survives a refresh. */
 export function FilterBar({ tab, filters, basePath = "/", hidden = {} }: { tab: string; filters: Filters; basePath?: string; hidden?: Record<string, string> }) {
+  const router = useRouter();
+  const [f, setF] = useState(filters);
+
+  const go = (next: Filters) => {
+    setF(next);
+    const p = new URLSearchParams({ ...hidden, tab });
+    if (next.q) p.set("q", next.q);
+    if (next.status) p.set("status", next.status);
+    if (next.sort) p.set("sort", next.sort);
+    if (next.booked) p.set("booked", "1");
+    if (next.overdue) p.set("overdue", "1");
+    if (next.afterHours) p.set("afterHours", "1");
+    router.push(`${basePath}?${p.toString()}`);
+  };
+  const clear = { q: "", status: "", sort: "" as const, booked: false, overdue: false, afterHours: false };
+
   return (
-    <form method="get" action={basePath} role="search" aria-label="Search and filter calls" className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-      <input type="hidden" name="tab" value={tab} />
-      {Object.entries(hidden).map(([k, v]) => (
-        <input key={k} type="hidden" name={k} value={v} />
-      ))}
-      <input name="q" type="search" defaultValue={filters.q} placeholder="Search name, phone, area" aria-label="Search name, phone, area or notes" className={`${field} w-52`} />
-      <select name="status" defaultValue={filters.status} aria-label="Status" className={field}>
-        <option value="">Any status</option>
-        {["qualified", "needs_attention", "disqualified"].map((s) => (
-          <option key={s} value={s}>
-            {STATUS_LABEL[s]}
-          </option>
-        ))}
-      </select>
-      <select name="sort" defaultValue={filters.sort} aria-label="Sort by" className={field}>
-        <option value="">Default order</option>
-        <option value="newest">Newest first</option>
-        <option value="due">Deadline soonest</option>
-        <option value="score">Highest score</option>
-      </select>
-      <label className="flex items-center gap-1.5 text-small">
-        <input type="checkbox" name="overdue" value="1" defaultChecked={filters.overdue} />
+    <div role="search" aria-label="Search and filter calls" className="m-card mb-4 flex flex-wrap items-center gap-x-4 gap-y-3 p-4">
+      <Input.Search
+        placeholder="Search name, phone, area, notes"
+        allowClear
+        defaultValue={f.q}
+        onSearch={(q) => go({ ...f, q })}
+        style={{ width: 280 }}
+        aria-label="Search name, phone, area or notes"
+      />
+      <Select
+        value={f.status}
+        onChange={(status) => go({ ...f, status })}
+        style={{ width: 170 }}
+        aria-label="Status"
+        options={[
+          { value: "", label: "Any status" },
+          { value: "qualified", label: "Qualified" },
+          { value: "needs_attention", label: "Needs attention" },
+          { value: "disqualified", label: "Disqualified" },
+        ]}
+      />
+      <Select
+        value={f.sort}
+        onChange={(sort) => go({ ...f, sort: sort as SortKey | "" })}
+        style={{ width: 170 }}
+        aria-label="Sort by"
+        options={[
+          { value: "", label: "Default order" },
+          { value: "newest", label: "Newest first" },
+          { value: "due", label: "Deadline soonest" },
+          { value: "score", label: "Highest score" },
+        ]}
+      />
+      <Checkbox checked={f.overdue} onChange={(e) => go({ ...f, overdue: e.target.checked })}>
         Overdue
-      </label>
-      <label className="flex items-center gap-1.5 text-small">
-        <input type="checkbox" name="booked" value="1" defaultChecked={filters.booked} />
+      </Checkbox>
+      <Checkbox checked={f.booked} onChange={(e) => go({ ...f, booked: e.target.checked })}>
         Booked
-      </label>
-      <label className="flex items-center gap-1.5 text-small">
-        <input type="checkbox" name="afterHours" value="1" defaultChecked={filters.afterHours} />
+      </Checkbox>
+      <Checkbox checked={f.afterHours} onChange={(e) => go({ ...f, afterHours: e.target.checked })}>
         After hours
-      </label>
-      <button type="submit" className="rounded border border-ink px-3 py-1.5 text-small font-medium">
-        Apply
-      </button>
-      {hasFilters(filters) && (
-        <Link href={`${basePath}?${new URLSearchParams({ ...hidden, tab }).toString()}`} className="text-small text-mute underline underline-offset-4 hover:text-ink">
-          Clear
-        </Link>
-      )}
-    </form>
+      </Checkbox>
+      {hasFilters(f) && <Button onClick={() => go(clear)}>Clear</Button>}
+    </div>
   );
 }

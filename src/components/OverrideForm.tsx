@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState } from "react";
+import { Button, Input, Select } from "antd";
+import { useActionState, useState } from "react";
 import { overrideAction, type ActionState } from "@/app/actions";
 import { STATUS_LABEL } from "@/lib/format";
 
@@ -8,36 +9,29 @@ const OPTIONS = ["qualified", "needs_attention", "disqualified"];
 
 export function OverrideForm({ callId, current }: { callId: number; current: string }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(overrideAction, {});
+  const [status, setStatus] = useState<string | undefined>();
   return (
     <form action={action} className="space-y-3">
       <input type="hidden" name="callId" value={callId} />
+      <input type="hidden" name="status" value={status ?? ""} />
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <label htmlFor="status" className="block text-small text-mute">
+          <label htmlFor={`status-${callId}`} className="block text-small font-bold">
             Change status to
           </label>
-          <select id="status" name="status" defaultValue="" className="mt-1 rounded border border-line bg-paper px-2 py-1.5 text-body">
-            <option value="" disabled>
-              Choose
-            </option>
-            {OPTIONS.filter((o) => o !== current).map((o) => (
-              <option key={o} value={o}>
-                {STATUS_LABEL[o]}
-              </option>
-            ))}
-          </select>
+          <Select id={`status-${callId}`} value={status} onChange={setStatus} placeholder="Choose" style={{ width: 190 }} options={OPTIONS.filter((o) => o !== current).map((o) => ({ value: o, label: STATUS_LABEL[o] }))} />
         </div>
         <div className="min-w-[14rem] flex-1">
-          <label htmlFor="reason" className="block text-small text-mute">
+          <label htmlFor={`reason-${callId}`} className="block text-small font-bold">
             Reason (required, logged)
           </label>
-          <input id="reason" name="reason" required minLength={5} autoComplete="off" className="mt-1 w-full rounded border border-line bg-paper px-2 py-1.5 text-body" />
+          <Input id={`reason-${callId}`} name="reason" required minLength={5} autoComplete="off" />
         </div>
-        <button type="submit" disabled={pending} className="rounded border border-ink px-3 py-1.5 text-body font-medium disabled:opacity-50">
-          {pending ? "Saving" : "Save override"}
-        </button>
+        <Button htmlType="submit" loading={pending} disabled={!status}>
+          Save override
+        </Button>
       </div>
-      <p role="status" className={`text-small ${state.error ? "font-medium text-ink" : "text-mute"}`}>
+      <p role="status" className={`text-small ${state.error ? "font-bold" : ""}`}>
         {state.error ?? state.ok ?? ""}
       </p>
     </form>

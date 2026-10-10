@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageBanner } from "@/components/memphis/PageBanner";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { CallDetail } from "@/components/CallDetail";
 import { FlagChip } from "@/components/Chip";
@@ -47,16 +48,15 @@ export default async function FounderPage({ searchParams }: { searchParams: Prom
   return (
     <div>
       <AutoRefresh />
-      <div className="mb-6 flex flex-wrap items-baseline justify-between gap-3">
-        <h1 className="text-title font-medium">Founder view</h1>
-        <nav aria-label="Period" className="flex gap-4 text-small">
+      <PageBanner title="Founder view" tone="blue" subtitle="How the studio is doing">
+        <nav aria-label="Period" className="flex gap-3 text-small">
           {RANGES.map((r) => (
-            <Link key={r.key} href={q({ range: r.key, call: "" })} aria-current={r.key === range ? "true" : undefined} className={r.key === range ? "font-medium text-ink underline underline-offset-4" : "text-mute hover:text-ink"}>
+            <Link key={r.key} href={q({ range: r.key, call: "" })} aria-current={r.key === range ? "true" : undefined} className={`rounded-full border-2 border-ink px-4 py-1.5 font-bold text-ink no-underline ${r.key === range ? "bg-yellow" : "bg-white"}`}>
               {r.label}
             </Link>
           ))}
         </nav>
-      </div>
+      </PageBanner>
 
       <section aria-label="Metrics">
         <dl className="grid grid-cols-2 gap-x-6 gap-y-5 border-y border-line py-5 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-6">
