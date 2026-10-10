@@ -19,9 +19,9 @@
 The token is used only by server code (`src/lib/hubspot/real.ts`). It is never sent to the browser, and a test fails if any other file reads it.
 
 The API paths used are the `/crm/v3` object, property, pipeline and search endpoints, and `/crm/v4/.../associations/default/...` for linking a deal to a contact.
-HubSpot also publishes dated API versions; **these calls have not been run against a real portal yet**, so test with a developer sandbox account first.
+**Verified against a real portal** (Hub 247641545): the properties and pipeline were created, and `npm run hubspot:test` passed 8 of 8: a contact and deal are created and linked, the stage and AI fields are right, an acknowledgement in the app reaches HubSpot, and moving the deal in HubSpot changes the status in the app. HubSpot also publishes dated API versions; the `/crm/v3` paths still work today.
 HubSpot has announced that support for its v1 to v3 APIs ends in September 2027, so the `/crm/v3` paths in `src/lib/hubspot/real.ts` should be moved to a dated version before then.
-Free and Starter HubSpot plans are limited to one deal pipeline, so creating "Phone Enquiries" may be refused there.
+Free and Starter HubSpot plans are usually limited to one deal pipeline, so creating "Phone Enquiries" can be refused on those plans. (It worked on the Hub 247641545 account.)
 
 ## 2. What syncs, and when
 
@@ -67,3 +67,16 @@ Common settings for every report: data source **Deals**, filter **Pipeline is Ph
    HubSpot custom reports cannot divide two aggregates directly, so show the two sums and the qualified count side by side, or use the Founder view for the exact figure.
 
 Then: Reporting > Dashboards > Create dashboard > add the five reports.
+
+## 4. Commands for checking it
+
+```bash
+npm run hubspot:check              # read-only: is the key valid, which scopes work, what already exists
+npm run hubspot:check -- --setup   # also creates the missing properties and the pipeline (safe to repeat)
+npm run hubspot:test               # creates ONE labelled test contact and deal and proves the two-way sync
+npm run hubspot:test -- --cleanup  # the same, then moves the test records to the recycle bin
+```
+
+**Owners scope (optional):** the key above does not need `crm.objects.owners.read`, but without it `hubspot:check` cannot list your designers' owner IDs. Add that scope to the key if you want the list, or find an owner ID in HubSpot (Settings > Users & Teams) and type it into Settings.
+
+**Transcript link:** each deal carries a link back to the call in this app. It uses `APP_BASE_URL`, so on a laptop it says `localhost` and only works for you. Once the app is deployed and `APP_BASE_URL` is the https address, new and updated deals get a working link.

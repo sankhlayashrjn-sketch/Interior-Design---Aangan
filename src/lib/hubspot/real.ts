@@ -141,4 +141,12 @@ export class RealHubSpot implements HubSpotApi {
   listDeals(pipelineId: string) {
     return this.search(pipelineId, null);
   }
+
+  async archiveDeal(id: string): Promise<void> {
+    await hs("DELETE", `/crm/v3/objects/deals/${id}`, undefined, [204, 404]);
+  }
+
+  async archiveContact(id: string): Promise<void> {
+    await hs("DELETE", `/crm/v3/objects/contacts/${id}`, undefined, [204, 404]);
+  }
 }

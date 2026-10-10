@@ -100,6 +100,16 @@ export class MockHubSpot implements HubSpotApi {
     return [...this.deals.values()].filter((d) => d.props.pipeline === pipelineId).map((d) => this.toRecord(d));
   }
 
+  async archiveDeal(id: string): Promise<void> {
+    this.write("deal.archive", { id });
+    this.deals.delete(id);
+  }
+
+  async archiveContact(id: string): Promise<void> {
+    this.write("contact.archive", { id });
+    this.contacts.delete(id);
+  }
+
   /** Test helper: someone edits a deal in the HubSpot UI. */
   edit(dealId: string, props: Record<string, string>) {
     const d = this.deals.get(dealId);

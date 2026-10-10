@@ -262,7 +262,7 @@ Stack: Next.js 16 (App Router), TypeScript, Tailwind 4, Postgres through Drizzle
 
 ## Known gaps
 
-- Live Anthropic, HubSpot, Telegram and Cal.com paths untested against the real services.
+- Live Anthropic and Cal.com paths untested against the real services. Telegram (reminders and the Acknowledge button) and HubSpot (`npm run hubspot:test`, 8 of 8) have been verified live.
 - The Vaani adapter is a stub (by design).
 - No fallback that creates a Cal.com booking after the call if the voice agent cannot book mid-call. The `POST /api/bookings` webhook already links a booking that arrives after the call, so a booking created by the app later could be fed through the same function (`applyCalEvent` in `src/lib/bookings.ts`).
 - Login is a single shared password, not per-person accounts.

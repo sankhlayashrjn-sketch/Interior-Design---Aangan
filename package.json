@@ -22,7 +22,8 @@
     "db:migrate:neon": "tsx --env-file=.env.neon scripts/migrate.ts",
     "dev:neon": "node --env-file=.env.neon node_modules/next/dist/bin/next dev",
     "smoke": "tsx scripts/smoke.ts",
-    "smoke:neon": "tsx --env-file=.env.neon scripts/smoke.ts"
+    "smoke:neon": "tsx --env-file=.env.neon scripts/smoke.ts",
+    "hubspot:test": "tsx scripts/hubspot-live-test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.132.1",

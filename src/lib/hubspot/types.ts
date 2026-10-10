@@ -60,6 +60,9 @@ export interface HubSpotApi {
   searchDealsModifiedSince(pipelineId: string, sinceMs: number): Promise<DealRecord[]>;
   /** Every deal in the pipeline (for the reports script). */
   listDeals(pipelineId: string): Promise<DealRecord[]>;
+  /** Move a deal or contact to HubSpot's recycle bin (used to clean up test records). */
+  archiveDeal(id: string): Promise<void>;
+  archiveContact(id: string): Promise<void>;
 }
 
 export class HubSpotError extends Error {
