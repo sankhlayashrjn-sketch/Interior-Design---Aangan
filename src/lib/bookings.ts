@@ -107,7 +107,7 @@ export async function applyCalEvent(evt: CalWebhook): Promise<BookingOutcome> {
       .returning();
   }
 
-  // Find the call: by booking id first, then by caller phone (most recent call in the last 3 days).
+  // Find the call: by booking id first, then by caller phone (most recent call in the last 3 days). A call whose booking was cancelled can take a new one.
   let call = await one(db.select().from(schema.calls).where(eq(schema.calls.bookingId, booking.calcomUid)).limit(1));
   if (!call && p.rescheduleUid) call = await one(db.select().from(schema.calls).where(eq(schema.calls.bookingId, p.rescheduleUid)).limit(1));
   if (!call && booking.attendeePhone) {
@@ -115,7 +115,7 @@ export async function applyCalEvent(evt: CalWebhook): Promise<BookingOutcome> {
       db
         .select()
         .from(schema.calls)
-        .where(and(eq(schema.calls.callerPhone, booking.attendeePhone), isNull(schema.calls.bookingId), gte(schema.calls.startedAt, new Date(Date.now() - 3 * 86_400_000))))
+        .where(and(eq(schema.calls.callerPhone, booking.attendeePhone), or(isNull(schema.calls.bookingId), eq(schema.calls.bookingStatus, "cancelled")), gte(schema.calls.startedAt, new Date(Date.now() - 3 * 86_400_000))))
         .orderBy(desc(schema.calls.startedAt))
         .limit(1),
     );

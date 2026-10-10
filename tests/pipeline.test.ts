@@ -188,6 +188,19 @@ describe("bookings", () => {
     expect(c.scoreBreakdown!.next_step.points).toBeLessThan(5);
   });
 
+  it("after a cancellation, a NEW booking by the same caller attaches to the same call", async () => {
+    const { call } = await ingestCall(payloadFor("T01", { started_at: new Date().toISOString(), booking_id: "bk1", booked_slot: istIso("2026-10-09 15:00") }));
+    await applyCalEvent({ triggerEvent: "BOOKING_CANCELLED", payload: { uid: "bk1", startTime: istIso("2026-10-09 15:00") } });
+    await applyCalEvent({
+      triggerEvent: "BOOKING_CREATED",
+      payload: { uid: "bk-new", startTime: istIso("2026-10-12 12:00"), attendees: [{ phoneNumber: "+91 98000 00000" }] },
+    });
+    const c = (await one(db.select().from(schema.calls).where(eq(schema.calls.id, call.id))))!;
+    expect(c.bookingId).toBe("bk-new");
+    expect(c.bookingStatus).toBe("booked");
+    expect(c.bookedSlot!.toISOString()).toBe(istIso("2026-10-12 12:00"));
+  });
+
   it("a booking that arrives before its call is linked by phone when the call lands", async () => {
     await applyCalEvent({
       triggerEvent: "BOOKING_CREATED",
