@@ -11,7 +11,7 @@ Vercel runs short-lived functions. It has no disk and no always-on process, so t
 | On your laptop / own server | On Vercel |
 |---|---|
 | Database is a local folder (PGlite) | **Neon Postgres**, through `DATABASE_URL` |
-| A timer inside the server ticks every minute | **Vercel Cron** calls `GET /api/cron/tick` every minute |
+| A timer inside the server ticks every minute | **Vercel Cron** (daily on Hobby, every minute on Pro) plus an outside pinger calls `GET /api/cron/tick` |
 | Telegram is polled by the server | Telegram calls the **webhook** `/api/telegram/webhook` |
 
 The tick does everything the timer does: scores any waiting call, sends due reminders, and syncs HubSpot. It is safe to run any number of times and from several places at once (claims and leases in the database stop two runs doing the same work).
@@ -55,7 +55,7 @@ Your Neon project is in **us-east-2** (Ohio). `vercel.json` pins the functions t
    Use **mock** modes in Preview so test deployments never message real people or write to your real HubSpot.
 3. Deploy. The first build creates the tables.
 
-`vercel.json` already contains the cron: `GET /api/cron/tick` every minute.
+`vercel.json` contains a once-a-day cron (`GET /api/cron/tick` at 03:00 UTC), which the free Hobby plan allows. It is only a safety net: for reminders on time, ALSO set up the free external pinger in "If you are on Hobby" below (every 5 minutes, or every minute on Pro with `* * * * *`).
 
 ## 3. First-run setup
 
