@@ -78,6 +78,9 @@ export const calls = pgTable(
     /** The validated JSON the AI returned, kept for audit. */
     aiOutput: jsonb("ai_output"),
 
+    /** Link to the call recording, when the voice provider gives one. Shown to designers as a play link. */
+    recordingUrl: text("recording_url"),
+
     bookingId: text("booking_id"),
     bookedSlot: ts("booked_slot"),
     bookingStatus: text("booking_status", { enum: ["booked", "rescheduled", "cancelled"] }),
@@ -100,6 +103,19 @@ export const calls = pgTable(
     index("calls_designer_idx").on(t.assignedDesignerId),
     index("calls_phone_idx").on(t.callerPhone),
   ],
+);
+
+/** Designers' own notes on a call. Never deleted. */
+export const callNotes = pgTable(
+  "call_notes",
+  {
+    id: serial("id").primaryKey(),
+    callId: integer("call_id").notNull().references(() => calls.id),
+    designerId: integer("designer_id").references(() => designers.id),
+    body: text("body").notNull(),
+    createdAt: ts("created_at").notNull(),
+  },
+  (t) => [index("call_notes_call_idx").on(t.callId)],
 );
 
 /** Cal.com bookings. Kept separately because a booking can arrive before its call is stored. */

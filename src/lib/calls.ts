@@ -1,9 +1,11 @@
 import "@/lib/runtime";
-import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, exists, gte, ilike, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
+import { DateTime } from "luxon";
 import { db, one, schema } from "@/db";
 import { CALL_STATUSES, type CallStatus } from "@/db/schema";
 import { audit } from "@/lib/audit";
 import { emit } from "@/lib/hooks";
+import { IST } from "@/lib/working-hours";
 
 export type Call = typeof schema.calls.$inferSelect;
 export type Designer = typeof schema.designers.$inferSelect;
@@ -65,17 +67,71 @@ function rank(c: Call): number {
   return { qualified: 1, needs_attention: 2, yet_to_be_processed: 3, disqualified: 4 }[c.status];
 }
 
-export async function listForDesigner(designerId: number, tab: Tab, now: Date = new Date()): Promise<Call[]> {
+export type SortKey = "priority" | "newest" | "due" | "score";
+
+export interface ListOptions {
+  /** Free text: matches name, phone, area, scope or the handoff note. */
+  q?: string;
+  status?: CallStatus;
+  booked?: boolean;
+  overdue?: boolean;
+  afterHours?: boolean;
+  sort?: SortKey;
+}
+
+/** Turn what a person typed into a safe ILIKE pattern: % and _ are ordinary characters here. */
+const likePattern = (q: string) => `%${q.trim().replace(/[\\%_]/g, (c) => "\\" + c)}%`;
+
+export async function listForDesigner(designerId: number, tab: Tab, now: Date = new Date(), opts: ListOptions = {}): Promise<Call[]> {
   const base = [eq(schema.calls.assignedDesignerId, designerId)];
   if (tab === "pending") base.push(isNull(schema.calls.acknowledgedAt), inArray(schema.calls.status, ["qualified", "needs_attention", "disqualified"]));
   if (tab === "acknowledged") base.push(isNotNull(schema.calls.acknowledgedAt));
-  const rows = await db.select().from(schema.calls).where(and(...base)).orderBy(desc(schema.calls.startedAt));
-  if (tab === "pending") {
-    const t = now.getTime();
-    const overdue = (c: Call) => (c.dueAt && c.dueAt.getTime() < t ? 0 : 1);
-    return rows.sort((a, b) => overdue(a) - overdue(b) || rank(a) - rank(b) || (a.dueAt?.getTime() ?? 0) - (b.dueAt?.getTime() ?? 0));
+
+  const q = opts.q?.trim();
+  if (q) {
+    const p = likePattern(q);
+    const inNotes = exists(db.select({ one: schema.callNotes.id }).from(schema.callNotes).where(and(eq(schema.callNotes.callId, schema.calls.id), ilike(schema.callNotes.body, p))));
+    base.push(or(ilike(schema.calls.callerName, p), ilike(schema.calls.callerPhone, p), ilike(schema.calls.location, p), ilike(schema.calls.scope, p), ilike(schema.calls.summary, p), inNotes)!);
   }
-  return rows;
+  if (opts.status) base.push(eq(schema.calls.status, opts.status));
+  if (opts.booked) base.push(isNotNull(schema.calls.bookedSlot), or(isNull(schema.calls.bookingStatus), inArray(schema.calls.bookingStatus, ["booked", "rescheduled"]))!);
+  if (opts.afterHours) base.push(eq(schema.calls.afterHours, true));
+  if (opts.overdue) base.push(isNull(schema.calls.acknowledgedAt), lt(schema.calls.dueAt, now));
+
+  const rows = await db.select().from(schema.calls).where(and(...base)).orderBy(desc(schema.calls.startedAt));
+  const sort: SortKey = opts.sort ?? (tab === "pending" ? "priority" : "newest");
+  const t = now.getTime();
+  const overdue = (c: Call) => (c.dueAt && !c.acknowledgedAt && c.dueAt.getTime() < t ? 0 : 1);
+  if (sort === "priority") return rows.sort((x, y) => overdue(x) - overdue(y) || rank(x) - rank(y) || (x.dueAt?.getTime() ?? 0) - (y.dueAt?.getTime() ?? 0));
+  if (sort === "due") return rows.sort((x, y) => (x.dueAt?.getTime() ?? Infinity) - (y.dueAt?.getTime() ?? Infinity));
+  if (sort === "score") return rows.sort((x, y) => (y.score ?? -1) - (x.score ?? -1));
+  return rows; // newest first, as fetched
+}
+
+export interface TodaySummary {
+  /** Waiting for acknowledgement and past the deadline. */
+  overdue: number;
+  /** Waiting, and the deadline falls within the next hour. */
+  dueSoon: number;
+  /** Consultations booked for today (IST). */
+  bookedToday: number;
+  /** Waiting calls that arrived outside working hours. */
+  afterHoursWaiting: number;
+}
+
+/** The "what needs me right now" line at the top of a designer's dashboard. */
+export async function todayForDesigner(designerId: number, now: Date = new Date()): Promise<TodaySummary> {
+  const mine = await db.select().from(schema.calls).where(eq(schema.calls.assignedDesignerId, designerId));
+  const t = now.getTime();
+  const waiting = mine.filter((c) => !c.acknowledgedAt && c.status !== "yet_to_be_processed");
+  const dayStart = DateTime.fromJSDate(now, { zone: IST }).startOf("day");
+  const dayEnd = dayStart.plus({ days: 1 }).toMillis();
+  return {
+    overdue: waiting.filter((c) => c.dueAt && c.dueAt.getTime() < t).length,
+    dueSoon: waiting.filter((c) => c.dueAt && c.dueAt.getTime() >= t && c.dueAt.getTime() < t + 3_600_000).length,
+    bookedToday: mine.filter((c) => c.bookedSlot && c.bookingStatus !== "cancelled" && c.bookedSlot.getTime() >= dayStart.toMillis() && c.bookedSlot.getTime() < dayEnd).length,
+    afterHoursWaiting: waiting.filter((c) => c.afterHours).length,
+  };
 }
 
 export async function countsForDesigner(designerId: number) {
@@ -87,18 +143,57 @@ export async function countsForDesigner(designerId: number) {
   };
 }
 
+export interface TimelineEvent {
+  at: Date;
+  text: string;
+}
+
+export const MAX_NOTE = 2000;
+
+/** A designer's note on a call. Notes are never edited or deleted, only added. */
+export async function addNote(callId: number, designerId: number, body: string, now: Date = new Date()): Promise<void> {
+  if (!(await getCall(callId))) throw new UserError("Call not found");
+  const text = body.trim();
+  if (text.length === 0) throw new UserError("Write something first");
+  if (text.length > MAX_NOTE) throw new UserError(`Keep notes under ${MAX_NOTE} characters`);
+  await db.insert(schema.callNotes).values({ callId, designerId, body: text, createdAt: now });
+}
+
+/** Everything that happened to a call, oldest first, assembled from what the app already records. */
+async function timelineFor(call: Call, name: (id: number | null) => string | null, overrides: (typeof schema.statusOverrides.$inferSelect)[]): Promise<TimelineEvent[]> {
+  const ev: TimelineEvent[] = [{ at: call.startedAt, text: call.afterHours ? "Call received (outside working hours)" : "Call received" }];
+  // The status the AI gave it, not the current one: a designer may have changed it since (the first override remembers the original).
+  const scoredAs = overrides[0]?.fromStatus ?? call.status;
+  if (call.processedAt) ev.push({ at: call.processedAt, text: `Scored: ${scoredAs.replace(/_/g, " ")}${call.score !== null ? `, ${call.score} / 100` : ""}. Assigned to ${name(call.assignedDesignerId) ?? "nobody"}` });
+
+  for (const b of await db.select().from(schema.bookings).where(eq(schema.bookings.callId, call.id))) {
+    ev.push({ at: b.updatedAt, text: `Booking ${b.status}${b.hostDesignerId ? ` with ${name(b.hostDesignerId)}` : ""}` });
+  }
+  for (const j of await db.select().from(schema.reminderJobs).where(and(eq(schema.reminderJobs.callId, call.id), eq(schema.reminderJobs.state, "sent")))) {
+    if (j.sentAt) ev.push({ at: j.sentAt, text: `${j.kind === "slot" ? "Urgent slot alert" : "Reminder"} sent to ${name(j.designerId) ?? "designer"} on Telegram` });
+  }
+  if (call.acknowledgedAt) ev.push({ at: call.acknowledgedAt, text: `Acknowledged by ${name(call.acknowledgedBy) ?? "someone"}` });
+  for (const o of overrides) ev.push({ at: o.at, text: `Status changed from ${o.fromStatus.replace(/_/g, " ")} to ${o.toStatus.replace(/_/g, " ")} by ${name(o.byDesignerId) ?? "HubSpot"}: ${o.reason}` });
+  const sync = await one(db.select().from(schema.hubspotSync).where(eq(schema.hubspotSync.callId, call.id)));
+  if (sync?.lastSyncedAt) ev.push({ at: sync.lastSyncedAt, text: "Last synced with HubSpot" });
+  return ev.sort((x, y) => x.at.getTime() - y.at.getTime());
+}
+
 export async function getDetail(callId: number) {
   const call = await getCall(callId);
   if (!call) return null;
   const designers = await db.select().from(schema.designers);
   const name = (id: number | null) => designers.find((d) => d.id === id)?.name ?? null;
   const overrides = await db.select().from(schema.statusOverrides).where(eq(schema.statusOverrides.callId, callId)).orderBy(asc(schema.statusOverrides.at));
+  const notes = await db.select().from(schema.callNotes).where(eq(schema.callNotes.callId, callId)).orderBy(asc(schema.callNotes.createdAt));
   const linked = call.linkedCallId ? ((await getCall(call.linkedCallId)) ?? null) : null;
   return {
     call,
     assignedTo: name(call.assignedDesignerId),
     acknowledgedByName: name(call.acknowledgedBy),
     overrides: overrides.map((o) => ({ ...o, byName: name(o.byDesignerId) })),
+    notes: notes.map((n) => ({ ...n, byName: name(n.designerId) })),
+    timeline: await timelineFor(call, name, overrides),
     linked,
   };
 }

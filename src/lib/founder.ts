@@ -123,3 +123,102 @@ export async function statusCounts(): Promise<Record<CallStatus, number>> {
 }
 
 export { getSettings };
+
+export interface TrendDay {
+  /** IST date, YYYY-MM-DD */
+  date: string;
+  label: string;
+  total: number;
+  qualified: number;
+  needsAttention: number;
+  disqualified: number;
+}
+
+/** Calls per day for the chart: last 7 days for "today" and "7 days", last 30 for "30 days". Days with no calls are included as zero. */
+export async function founderTrend(range: Range, now: Date = new Date()): Promise<TrendDay[]> {
+  const days = range === "30d" ? 30 : 7;
+  const first = at(now).startOf("day").minus({ days: days - 1 });
+  const rows = await callsSince(first.toJSDate());
+  const out: TrendDay[] = [];
+  for (let i = 0; i < days; i++) {
+    const day = first.plus({ days: i });
+    const next = day.plus({ days: 1 }).toMillis();
+    const mine = rows.filter((c) => c.startedAt.getTime() >= day.toMillis() && c.startedAt.getTime() < next);
+    out.push({
+      date: day.toISODate()!,
+      label: day.toFormat("ccc d"),
+      total: mine.length,
+      qualified: mine.filter((c) => c.status === "qualified").length,
+      needsAttention: mine.filter((c) => c.status === "needs_attention").length,
+      disqualified: mine.filter((c) => c.status === "disqualified").length,
+    });
+  }
+  return out;
+}
+
+export interface DesignerLoad {
+  id: number;
+  name: string;
+  isEscalation: boolean;
+  /** Calls assigned in the period. */
+  assigned: number;
+  /** Waiting for acknowledgement right now (any age). */
+  waiting: number;
+  /** Waiting and already past the deadline. */
+  overdue: number;
+  acknowledged: number;
+  /** Of the calls that could be judged, the share acknowledged on time. Null if none could be. */
+  onTimePct: number | null;
+  /** Average working minutes from call to acknowledgement. */
+  avgAckMinutes: number | null;
+}
+
+export async function designerWorkload(range: Range, now: Date = new Date()): Promise<DesignerLoad[]> {
+  const designers = await db.select().from(schema.designers).where(eq(schema.designers.active, true));
+  const inRange = (await callsSince(rangeStart(range, now))).filter((c) => c.status !== "yet_to_be_processed");
+  const everyone = await db.select().from(schema.calls);
+  const cfg = await loadHours();
+  const t = now.getTime();
+
+  return designers
+    .map((d) => {
+      const mine = inRange.filter((c) => c.assignedDesignerId === d.id);
+      const waiting = everyone.filter((c) => c.assignedDesignerId === d.id && !c.acknowledgedAt && c.status !== "yet_to_be_processed");
+      const judged = mine.filter((c) => c.acknowledgedAt || (c.dueAt && c.dueAt.getTime() < t));
+      const onTime = judged.filter((c) => c.acknowledgedAt && c.dueAt && c.acknowledgedAt.getTime() <= c.dueAt.getTime()).length;
+      const acked = mine.filter((c) => c.acknowledgedAt);
+      const minutes = acked.map((c) => workingMinutesBetween(c.startedAt, c.acknowledgedAt!, cfg));
+      return {
+        id: d.id,
+        name: d.name,
+        isEscalation: d.isEscalation,
+        assigned: mine.length,
+        waiting: waiting.length,
+        overdue: waiting.filter((c) => c.dueAt && c.dueAt.getTime() < t).length,
+        acknowledged: acked.length,
+        onTimePct: judged.length ? Math.round((onTime / judged.length) * 100) : null,
+        avgAckMinutes: minutes.length ? minutes.reduce((a, b) => a + b, 0) / minutes.length : null,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export interface FunnelStep {
+  label: string;
+  count: number;
+  /** Share of all calls in the period. */
+  pct: number | null;
+}
+
+/** Calls -> qualified -> acknowledged -> booked a slot, for the period. */
+export async function funnel(range: Range, now: Date = new Date()): Promise<FunnelStep[]> {
+  const rows = (await callsSince(rangeStart(range, now))).filter((c) => c.status !== "yet_to_be_processed");
+  const total = rows.length;
+  const step = (label: string, count: number): FunnelStep => ({ label, count, pct: total ? Math.round((count / total) * 100) : null });
+  return [
+    step("Calls", total),
+    step("Qualified", rows.filter((c) => c.status === "qualified").length),
+    step("Acknowledged by a designer", rows.filter((c) => c.acknowledgedAt).length),
+    step("Booked a consultation", rows.filter((c) => c.bookedSlot && c.bookingStatus !== "cancelled").length),
+  ];
+}

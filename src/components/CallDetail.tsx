@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { acknowledgeAction } from "@/app/actions";
 import { FlagChip, StatusChip } from "@/components/Chip";
+import { NoteForm } from "@/components/NoteForm";
 import { OverrideForm } from "@/components/OverrideForm";
 import type { getDetail } from "@/lib/calls";
 import { fmtDateTime, fmtDue, PROPERTY_LABEL } from "@/lib/format";
@@ -28,7 +29,7 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 export function CallDetail({ detail, backHref, now = new Date() }: { detail: Detail; backHref: string; now?: Date }) {
-  const { call, assignedTo, acknowledgedByName, overrides, linked } = detail;
+  const { call, assignedTo, acknowledgedByName, overrides, notes, timeline, linked } = detail;
   const due = fmtDue(call.dueAt, call.acknowledgedAt, now);
   const processed = call.status !== "yet_to_be_processed";
   const turns = splitTurns(call.transcript);
@@ -49,6 +50,13 @@ export function CallDetail({ detail, backHref, now = new Date() }: { detail: Det
           {fmtDateTime(call.startedAt)} · {Math.round(call.durationSec / 60 * 10) / 10} min · {call.callerPhone ?? "Caller ID withheld"} · Assigned to {assignedTo ?? "nobody"}
           {call.afterHours ? " · After hours" : ""}
         </p>
+        {call.recordingUrl && (
+          <p className="mt-1 text-small">
+            <a href={call.recordingUrl} target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">
+              Listen to the call
+            </a>
+          </p>
+        )}
         {call.reason && call.status !== "qualified" && (
           <p className="mt-3">
             <span className="font-medium">Why: </span>
@@ -108,6 +116,24 @@ export function CallDetail({ detail, backHref, now = new Date() }: { detail: Det
             ) : (
               <p className="text-mute">No slot booked.</p>
             )}
+          </Section>
+
+          <Section title="Notes">
+            {notes.length === 0 ? (
+              <p className="text-mute">No notes yet.</p>
+            ) : (
+              <ul className="space-y-3">
+                {notes.map((n) => (
+                  <li key={n.id}>
+                    <p className="whitespace-pre-line">{n.body}</p>
+                    <p className="text-small text-mute">
+                      {n.byName ?? "Someone"} · {fmtDateTime(n.createdAt)}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <NoteForm callId={call.id} />
           </Section>
 
           <Section title="Extracted fields">
@@ -171,6 +197,17 @@ export function CallDetail({ detail, backHref, now = new Date() }: { detail: Det
           )}
         </Section>
       )}
+
+      <Section title="Timeline">
+        <ol className="space-y-2">
+          {timeline.map((e, i) => (
+            <li key={i} className="grid grid-cols-[9.5rem_1fr] gap-3">
+              <span className="text-small text-mute">{fmtDateTime(e.at).replace(" IST", "")}</span>
+              <span>{e.text}</span>
+            </li>
+          ))}
+        </ol>
+      </Section>
 
       <Section title="Transcript">
         {linked && <p className="mb-3 text-small text-mute">Follows an earlier call from the same number at {fmtDateTime(linked.startedAt)}.</p>}

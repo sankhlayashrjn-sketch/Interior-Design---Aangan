@@ -2,9 +2,10 @@ import Link from "next/link";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { CallDetail } from "@/components/CallDetail";
 import { FlagChip } from "@/components/Chip";
+import { DesignerTable, FunnelList, TrendChart } from "@/components/FounderCharts";
 import type { CallStatus } from "@/db/schema";
 import { getDetail } from "@/lib/calls";
-import { costPanel, founderList, founderMetrics, parseRange, RANGES, statusCounts } from "@/lib/founder";
+import { costPanel, designerWorkload, founderList, founderMetrics, founderTrend, funnel, parseRange, RANGES, statusCounts } from "@/lib/founder";
 import { fmtInr, fmtMinutes, fmtWhen } from "@/lib/format";
 
 const TABS: { key: CallStatus; label: string }[] = [
@@ -33,6 +34,9 @@ export default async function FounderPage({ searchParams }: { searchParams: Prom
   const tab: CallStatus = TABS.some((t) => t.key === sp.tab) ? (sp.tab as CallStatus) : "qualified";
   const m = await founderMetrics(range, now);
   const cost = await costPanel(range, now);
+  const trend = await founderTrend(range, now);
+  const steps = await funnel(range, now);
+  const load = await designerWorkload(range, now);
   const counts = await statusCounts();
   const rows = await founderList(tab);
   const selectedId = Number(sp.call) || null;
@@ -62,6 +66,21 @@ export default async function FounderPage({ searchParams }: { searchParams: Prom
           <Metric label="Avg time to acknowledge" value={m.avgAckMinutes === null ? "–" : fmtMinutes(m.avgAckMinutes)} sub={m.ackCount ? `working time, ${m.ackCount} calls` : "no acknowledgements yet"} />
           <Metric label="Calls with a booked slot" value={String(m.booked)} />
         </dl>
+      </section>
+
+      <section aria-label="Calls per day" className="mt-8">
+        <h2 className="mb-3 text-small font-medium text-mute">Calls per day, last {trend.length} days</h2>
+        <TrendChart days={trend} />
+      </section>
+
+      <section aria-label="Funnel" className="mt-8">
+        <h2 className="mb-3 text-small font-medium text-mute">From call to consultation, last {rangeLabel}</h2>
+        <FunnelList steps={steps} />
+      </section>
+
+      <section aria-label="Designers" className="mt-8">
+        <h2 className="mb-3 text-small font-medium text-mute">Designers, last {rangeLabel}. Waiting and overdue are as of now.</h2>
+        <DesignerTable rows={load} />
       </section>
 
       <section aria-label="Cost" className="mt-8">

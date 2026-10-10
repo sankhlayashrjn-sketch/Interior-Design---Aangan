@@ -142,8 +142,8 @@ Seven criteria, 100 points: service fit 25, project scale 20, budget realism 15,
 
 ## Screens
 
-- **Designer dashboard** (`/`): Pending acknowledgement, Acknowledged and All tabs. Each row shows time, caller, score, status, booked slot and a due-in or overdue indicator. The detail panel has the handoff note, extracted fields, score breakdown with evidence, full transcript, Acknowledge, and status override.
-- **Founder view** (`/founder`): Qualified, Disqualified (with reason), Needs attention and Yet to be processed tabs. Metrics: calls today, % acknowledged within SLA, after-hours calls caught, average time to acknowledge (working time), calls with a booked slot. Cost panel: AI cost per call, telephony minutes and cost per call, monthly total, cost per qualified lead.
+- **Designer dashboard** (`/`): Pending acknowledgement, Acknowledged and All tabs. A "today" line shows what needs you now (overdue, due within the hour, booked today, waiting from after hours). Search (name, phone, area, scope, handoff note, your own notes) and filters (status, overdue, booked, after hours) and sorting (newest, deadline, score) keep their place as you move between tabs and calls, and every view has a shareable link. Each row shows time, caller, score, status, booked slot and a due-in or overdue indicator. The detail panel has the handoff note, your **notes** (saved with your name and the time, never edited or deleted), extracted fields, score breakdown with evidence, a **timeline** of everything that happened to the call, the full transcript, a recording link when there is one, Acknowledge, and status override.
+- **Founder view** (`/founder`): Qualified, Disqualified (with reason), Needs attention and Yet to be processed tabs. Metrics: calls today, % acknowledged within SLA, after-hours calls caught, average time to acknowledge (working time), calls with a booked slot. Calls per day (a chart), the funnel from call to consultation, a per-designer table (assigned, waiting, overdue, on-time share, average time to acknowledge), and a cost panel: AI cost per call, telephony minutes and cost per call, monthly total, cost per qualified lead.
 - **Simulate call** (`/simulate`): runs a transcript through the same pipeline as a real call.
 - **Settings** (`/settings`): working hours and days, holidays, SLA, slot-alert lead time, AI model name, designers (name, Telegram chat ID, HubSpot owner ID, Cal.com user), and read-only integration status.
 
@@ -203,7 +203,8 @@ Steps:
    | `started_at` | Call start, ISO 8601 |
    | `duration_sec` | Call length in seconds (drives telephony cost) |
    | `transcript` | Flatten the turns to lines starting `Agent:` and `Caller:` |
-   | `booking_id`, `booked_slot` | The Cal.com booking the agent made, if Vaani's call details expose it. Otherwise leave them out; the Cal.com webhook links the booking by phone number. |
+   | `recording_url` | A link to the call recording, if Vaani provides one (optional, http or https only). Designers see it as "Listen to the call". |
+| `booking_id`, `booked_slot` | The Cal.com booking the agent made, if Vaani's call details expose it. Otherwise leave them out; the Cal.com webhook links the booking by phone number. |
 
 3. **Wire the ingest mode.**
    - Webhook mode: add a route such as `src/app/api/vaani/webhook/route.ts` that reads the raw body, calls `voiceProvider.verifyWebhook`, then `voiceProvider.parseWebhook`, then `ingestCall(payload)` from `src/lib/ingest.ts` for each result.

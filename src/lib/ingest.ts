@@ -24,6 +24,12 @@ export const IngestPayloadSchema = z.object({
   started_at: z.string().refine((s) => !Number.isNaN(Date.parse(s)), "started_at must be an ISO date-time"),
   duration_sec: z.number().int().min(0),
   transcript: z.string(),
+  /** Link to the recording, if the provider has one. http(s) only. */
+  recording_url: z
+    .string()
+    .nullable()
+    .optional()
+    .refine((u) => !u || /^https?:\/\/\S+$/i.test(u), "recording_url must be an http(s) link"),
   booking_id: z.string().nullable().optional(),
   booked_slot: z
     .string()
@@ -81,6 +87,7 @@ export async function ingestCall(raw: unknown, opts: { process?: boolean } = {})
       durationSec: payload.duration_sec,
       transcript: payload.transcript,
       rawPayload: raw as object,
+      recordingUrl: payload.recording_url ?? null,
       receivedAt: new Date(),
       status: "yet_to_be_processed",
       linkedCallId,

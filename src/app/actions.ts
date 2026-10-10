@@ -5,7 +5,7 @@ import { DateTime } from "luxon";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { acknowledgeCall, overrideStatus, UserError, activeDesigners } from "@/lib/calls";
+import { acknowledgeCall, addNote, overrideStatus, UserError, activeDesigners } from "@/lib/calls";
 import { ingestCall } from "@/lib/ingest";
 import { DESIGNER_COOKIE, currentDesigner } from "@/lib/session";
 import { IST } from "@/lib/working-hours";
@@ -62,6 +62,19 @@ export async function overrideAction(_prev: ActionState, formData: FormData): Pr
   }
   revalidatePath("/");
   return { ok: "Status changed and logged" };
+}
+
+export async function addNoteAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const me = await currentDesigner();
+  if (!me) return { error: "Choose a designer first" };
+  try {
+    await addNote(Number(formData.get("callId")), me.id, String(formData.get("body") ?? ""));
+  } catch (e) {
+    if (e instanceof UserError) return { error: e.message };
+    throw e;
+  }
+  revalidatePath("/");
+  return { ok: "Note saved" };
 }
 
 /** Same pipeline as POST /api/calls: builds the payload a voice provider would send and runs ingestCall. */
