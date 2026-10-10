@@ -3,7 +3,8 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
-import { on } from "@/lib/hooks";
+import { emit, on } from "@/lib/hooks";
+import { rescoreCall } from "@/lib/ingest";
 import { IST } from "@/lib/working-hours";
 
 /**
@@ -169,7 +170,20 @@ export async function bookAfterCall(callId: number, now: Date = new Date()): Pro
     const out = (await book.json()) as { data?: { uid?: string }; error?: { message?: string } };
     if (!book.ok || !out.data?.uid) return skip(`Cal.com refused: ${out.error?.message ?? book.status}`, "failed");
 
-    await db.update(schema.calls).set({ bookingWish: { ...wish, appBookingUid: out.data.uid, appBookingDesignerId: designer.id } satisfies StoredWish }).where(eq(schema.calls.id, callId));
+    // Link it to the call right now. Cal.com's webhook arrives later and finds it already linked (a phone-less caller
+    // could not be matched by it at all).
+    const startTime = new Date(slot.toISO()!);
+    const stamp = new Date();
+    await db
+      .insert(schema.bookings)
+      .values({ calcomUid: out.data.uid, callId, startTime, status: "booked", attendeePhone: call.callerPhone, raw: { source: "app", designerId: designer.id }, createdAt: stamp, updatedAt: stamp })
+      .onConflictDoUpdate({ target: schema.bookings.calcomUid, set: { callId, startTime, status: "booked", updatedAt: stamp } });
+    await db
+      .update(schema.calls)
+      .set({ bookingId: out.data.uid, bookedSlot: startTime, bookingStatus: "booked", bookingWish: { ...wish, appBookingUid: out.data.uid, appBookingDesignerId: designer.id } satisfies StoredWish })
+      .where(eq(schema.calls.id, callId));
+    await rescoreCall(callId);
+    await emit("booking.changed", { callId, kind: "booked" });
     await audit("booking.auto", { state: "booked", uid: out.data.uid, start: slot.toISO(), asked: wish.wantedAt, designer: designer.name }, callId);
     return { state: "booked", uid: out.data.uid, start: slot.toISO()! };
   } catch (e) {

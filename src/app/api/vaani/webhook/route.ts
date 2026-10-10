@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
+import { audit } from "@/lib/audit";
 import { ingestCall } from "@/lib/ingest";
 import { bookAfterCall, rememberBookingWish } from "@/lib/voice/book-after-call";
 import { rememberCallerPhone, voiceProvider } from "@/lib/voice/vaani";
@@ -19,6 +20,7 @@ export async function POST(req: Request) {
   const key = new URL(req.url).searchParams.get("key");
   if (!voiceProvider.verifyWebhook(raw, req.headers, key)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
+  await logShape(raw);
   await rememberCallerPhone(raw); // the call_started event is the only one that says who is calling
   let created = 0;
   try {
@@ -47,5 +49,18 @@ async function bookFromEntities(callId: number, raw: string) {
     if (await rememberBookingWish(callId, entities)) await bookAfterCall(callId); // a no-op until the call has a designer
   } catch (e) {
     console.error("[vaani booking]", e);
+  }
+}
+
+/** Vaani's real event shapes are only known from its docs, so keep a trimmed copy (no transcript) of each event to compare against. */
+async function logShape(raw: string) {
+  try {
+    const e = JSON.parse(raw) as Record<string, unknown>;
+    const d = (e.data && typeof e.data === "object" ? e.data : {}) as Record<string, unknown>;
+    const { transcript: _t, ...rest } = d;
+    void _t;
+    await audit("vaani.event", { event: e.event, top: Object.keys(e), data: rest });
+  } catch {
+    /* not JSON: nothing to keep */
   }
 }

@@ -107,6 +107,11 @@ describe("booking once a designer is assigned", () => {
     expect(bookings[0].designer).toBe("Meera");
     expect(bookings[0].start).toBe("2026-10-12T06:00:00.000Z"); // 11:30 IST: the first free slot at or after 11:00
     expect(bookings[0].attendee).toMatchObject({ name: "Priya", email: "priya@example.com", phoneNumber: "+919822000111" });
+    // linked to the call at once, without waiting for Cal.com's webhook
+    const linked = await callById(call.id);
+    expect(linked.bookingId).toBe("uid-1");
+    expect(linked.bookingStatus).toBe("booked");
+    expect(linked.bookedSlot!.toISOString()).toBe("2026-10-12T06:00:00.000Z");
   });
 
   it("moving the call to another designer replaces the booking, so the invite names the new designer", async () => {
