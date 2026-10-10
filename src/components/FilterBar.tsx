@@ -16,10 +16,13 @@ export const hasFilters = (f: Filters) => !!(f.q || f.status || f.sort || f.book
 const field = "rounded border border-line bg-paper px-2 py-1.5 text-small";
 
 /** Search and filters. A plain GET form, so it works without JavaScript and every view has a link you can share. */
-export function FilterBar({ tab, filters }: { tab: string; filters: Filters }) {
+export function FilterBar({ tab, filters, basePath = "/", hidden = {} }: { tab: string; filters: Filters; basePath?: string; hidden?: Record<string, string> }) {
   return (
-    <form method="get" action="/" role="search" aria-label="Search and filter calls" className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+    <form method="get" action={basePath} role="search" aria-label="Search and filter calls" className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
       <input type="hidden" name="tab" value={tab} />
+      {Object.entries(hidden).map(([k, v]) => (
+        <input key={k} type="hidden" name={k} value={v} />
+      ))}
       <input name="q" type="search" defaultValue={filters.q} placeholder="Search name, phone, area" aria-label="Search name, phone, area or notes" className={`${field} w-52`} />
       <select name="status" defaultValue={filters.status} aria-label="Status" className={field}>
         <option value="">Any status</option>
@@ -51,7 +54,7 @@ export function FilterBar({ tab, filters }: { tab: string; filters: Filters }) {
         Apply
       </button>
       {hasFilters(filters) && (
-        <Link href={`/?tab=${tab}`} className="text-small text-mute underline underline-offset-4 hover:text-ink">
+        <Link href={`${basePath}?${new URLSearchParams({ ...hidden, tab }).toString()}`} className="text-small text-mute underline underline-offset-4 hover:text-ink">
           Clear
         </Link>
       )}

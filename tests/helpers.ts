@@ -21,6 +21,8 @@ export async function resetDb() {
   setAutoPush(false);
   setHubSpot(new MockHubSpot());
   await getSettings();
+  // Most tests exercise the pipeline end to end, so calls are assigned on arrival. Tests of the front desk flow switch to manual.
+  await db.update(schema.settings).set({ assignmentMode: "auto" });
   await db.insert(schema.designers).values([
     { name: "Aryan", rrOrder: 1, calcomUser: "aryan@aangan.test" },
     { name: "Meera", rrOrder: 2, calcomUser: "meera@aangan.test" },

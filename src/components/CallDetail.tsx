@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { acknowledgeAction } from "@/app/actions";
+import { AssignForm, type AssignOption } from "@/components/AssignForm";
 import { FlagChip, StatusChip } from "@/components/Chip";
 import { NoteForm } from "@/components/NoteForm";
 import { OverrideForm } from "@/components/OverrideForm";
@@ -28,18 +28,23 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-export function CallDetail({ detail, backHref, now = new Date() }: { detail: Detail; backHref: string; now?: Date }) {
-  const { call, assignedTo, acknowledgedByName, overrides, notes, timeline, linked } = detail;
+export interface AssignPanel {
+  designers: AssignOption[];
+  suggestedId: number | null;
+}
+
+/**
+ * One call in full. The front desk sees the assignment control; designers see Acknowledge. Everything else
+ * (handoff note, transcript, score, override, notes, timeline) is the same for both, so designers can audit it.
+ */
+export function CallDetail({ detail, now = new Date(), assign }: { detail: Detail; now?: Date; assign?: AssignPanel }) {
+  const { call, assignedTo, assignedByName, acknowledgedByName, overrides, notes, timeline, linked } = detail;
   const due = fmtDue(call.dueAt, call.acknowledgedAt, now);
   const processed = call.status !== "yet_to_be_processed";
   const turns = splitTurns(call.transcript);
 
   return (
     <article aria-label="Call detail">
-      <Link href={backHref} className="mb-4 inline-block text-small text-mute hover:text-ink xl:hidden">
-        Back to list
-      </Link>
-
       <header className="pb-5">
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-title font-medium">{call.callerName ?? call.callerPhone ?? "Unknown caller"}</h2>
@@ -47,7 +52,7 @@ export function CallDetail({ detail, backHref, now = new Date() }: { detail: Det
           <FlagChip flag={call.flag} />
         </div>
         <p className="mt-1 text-small text-mute">
-          {fmtDateTime(call.startedAt)} · {Math.round(call.durationSec / 60 * 10) / 10} min · {call.callerPhone ?? "Caller ID withheld"} · Assigned to {assignedTo ?? "nobody"}
+          {fmtDateTime(call.startedAt)} · {Math.round(call.durationSec / 60 * 10) / 10} min · {call.callerPhone ?? "Caller ID withheld"} · {assignedTo ? `Assigned to ${assignedTo}${assignedByName ? ` by ${assignedByName}` : ""}` : "Not assigned yet"}
           {call.afterHours ? " · After hours" : ""}
         </p>
         {call.recordingUrl && (
@@ -65,7 +70,13 @@ export function CallDetail({ detail, backHref, now = new Date() }: { detail: Det
         )}
       </header>
 
-      {processed && (
+      {processed && assign && !call.acknowledgedAt && call.status !== "disqualified" && (
+        <div className="pb-5">
+          <AssignForm callId={call.id} designers={assign.designers} suggestedId={assign.suggestedId} currentId={call.assignedDesignerId} />
+        </div>
+      )}
+
+      {processed && !assign && call.assignedDesignerId && (
         <div className="flex flex-wrap items-center gap-4 pb-5">
           {call.acknowledgedAt ? (
             <p className="text-mute">Acknowledged by {acknowledgedByName} · {due.text.replace("Acknowledged ", "")}</p>

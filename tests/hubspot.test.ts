@@ -58,7 +58,7 @@ describe("push: app to HubSpot", () => {
     expect(d.props).toMatchObject({ ai_status: "qualified", app_call_id: String(c.id), hubspot_owner_id: "owner-1" });
     expect(Number(d.props.ai_score)).toBe(c.score);
     expect(d.props.ai_summary).toBe(c.summary);
-    expect(d.props.call_transcript_url).toContain(`call=${c.id}`);
+    expect(d.props.call_transcript_url).toContain(`/call/${c.id}`);
     expect(Number(d.props.call_telephony_cost_inr)).toBeGreaterThan(0);
     expect(Number(d.props.call_ai_cost_inr)).toBeGreaterThan(0);
     const contact = hs.contacts.get((await row(c.id)).hubspotContactId!)!;

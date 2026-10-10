@@ -23,7 +23,7 @@ On Windows PowerShell use `copy .env.example .env` for the second line.
 Open http://localhost:3000. The seed loads 15 real (anonymised) calls through the real pipeline, so the dashboards are not empty.
 
 Try it:
-1. **Dashboard**: pick a designer in "Viewing as". Open a call, read the note, click **Acknowledge**. Try a status override (a reason is required).
+1. **Front desk**: pick a front desk officer in "Viewing as". Open a call in the To assign tab and click **Assign** (the suggested designer is already chosen). Then switch to a designer, open the **Designers** tab, open the call, read the transcript and click **Acknowledge**. Try a status override (a reason is required).
 2. **Simulate call**: pick a sample (or paste a transcript), choose a time of day (try "After hours" or "Sunday"), run it, then "Open in dashboard as ...".
 3. **Founder**: metrics, cost panel, and every call by status.
 4. Watch the terminal: `[mock.telegram.send]` and `[mock.hubspot.*]` lines show what would have gone out.
@@ -63,7 +63,7 @@ flowchart LR
     Ingest --> DB[("Postgres: Neon, or local PGlite")]
     Ingest --> AI["AI scoring: prompts/*.md + context/*.md"]
     AI --> Rules["Rubric in code: score, status, price guardrail"]
-    Rules --> Assign["Assign designer: Cal.com host, else round-robin"]
+    Rules --> Assign["Front desk assigns a designer (suggested: Cal.com host, else fewest waiting calls). Auto-assigned if nobody does."]
     Bookings --> DB
     Bookings --> Assign
     Assign --> DB
@@ -142,23 +142,33 @@ Seven criteria, 100 points: service fit 25, project scale 20, budget realism 15,
 
 ## Screens
 
-- **Designer dashboard** (`/`): Pending acknowledgement, Acknowledged and All tabs. A "today" line shows what needs you now (overdue, due within the hour, booked today, waiting from after hours). Search (name, phone, area, scope, handoff note, your own notes) and filters (status, overdue, booked, after hours) and sorting (newest, deadline, score) keep their place as you move between tabs and calls, and every view has a shareable link. Each row shows time, caller, score, status, booked slot and a due-in or overdue indicator. The detail panel has the handoff note, your **notes** (saved with your name and the time, never edited or deleted), extracted fields, score breakdown with evidence, a **timeline** of everything that happened to the call, the full transcript, a recording link when there is one, Acknowledge, and status override.
-- **Founder view** (`/founder`): Qualified, Disqualified (with reason), Needs attention and Yet to be processed tabs. Metrics: calls today, % acknowledged within SLA, after-hours calls caught, average time to acknowledge (working time), calls with a booked slot. Calls per day (a chart), the funnel from call to consultation, a per-designer table (assigned, waiting, overdue, on-time share, average time to acknowledge), and a cost panel: AI cost per call, telephony minutes and cost per call, monthly total, cost per qualified lead.
+- **Front desk** (`/`): the inbox the front desk officers work from every day. **To assign** lists every qualified and needs-attention call nobody has taken yet; **Disqualified** keeps the rest visible for a second look (nothing is ever hidden or rejected); **Assigned** shows what has been handed over. Click a call and it opens right under its row, with the handoff note, score and transcript, and an **Assign to** box with the **suggested designer already selected** (the Cal.com host if the caller booked, the studio head for a complaint, otherwise whoever has the fewest waiting calls, shown next to each name). One click assigns. Until the designer acknowledges, the same box says **Reassign**.
+- **Designers** (`/designers`): the next tab. Each designer sees the calls assigned to them (Pending acknowledgement, Acknowledged, All), or everyone's with "Everyone". Click a call to open it in place: handoff note, **notes** (saved with your name and the time, never edited or deleted), extracted fields, score breakdown with evidence, a **timeline** of everything that happened, the **full transcript**, a recording link when there is one, **Acknowledge**, and status override. A "today" line shows what needs you now. Search and filters keep their place, and every view and every open call has a shareable link.
+- **Founder view** (`/founder`): Qualified, Disqualified (with reason), Needs attention and Yet to be processed tabs. Metrics: calls today, % acknowledged within SLA, **% assigned within target** (with average time to assign and how many the app had to assign itself), after-hours calls caught, average time to acknowledge (working time), calls with a booked slot. Calls per day (a chart), the funnel from call to consultation (calls, qualified, assigned, acknowledged, booked), a per-designer table (assigned, waiting, overdue, on-time share, average time to acknowledge), and a cost panel: AI cost per call, telephony minutes and cost per call, monthly total, cost per qualified lead.
 - **Simulate call** (`/simulate`): runs a transcript through the same pipeline as a real call.
-- **Settings** (`/settings`): working hours and days, holidays, SLA, slot-alert lead time, AI model name, designers (name, Telegram chat ID, HubSpot owner ID, Cal.com user), and read-only integration status.
+- **Settings** (`/settings`): working hours and days, holidays, **how calls reach designers** (front desk assigns, or the app assigns on arrival), the front desk's assign deadline, the auto-assign grace period, the designer's acknowledge deadline, slot-alert lead time, AI model name, **people** (name, role: designer or front desk officer, Telegram chat ID, HubSpot owner ID, Cal.com user), and read-only integration status.
 
 **Login is one shared password** (`APP_PASSWORD`), checked by `src/proxy.ts`, with a signed cookie that lasts 7 days. On a laptop with no password set there is no login. **In production with no password set, the app locks itself** and says why, instead of running open. The "Viewing as" selector is still just a convenience, not a security boundary: everyone who knows the password sees everything. Move to per-person accounts when more people use it.
 
 ## Reminders
 
+Two stages, each with its own clock (all in working hours, all configurable in Settings):
+
 | Situation | What happens |
 |---|---|
-| Call arrives in working hours, not acknowledged within 1 working hour | One reminder to the assigned designer. A call at 17:30 is due at 09:30 next working day. |
-| Call arrives outside working hours (night, Sunday, holiday) | At 09:00 the next working day, **one** digest per designer listing all their pending calls. |
-| Booked slot is 30 minutes away and the call is not acknowledged | Urgent message to the designer, with a copy to the studio head. |
-| Booking cancelled or rescheduled | The call updates and the designer is told. |
+| A qualified or needs-attention call arrives in working hours and nobody assigns it within 1 working hour | A reminder to each front desk officer with a **button per designer**: tap one to assign it from Telegram. |
+| It still is not assigned 1 working hour after that | The app assigns it to the designer with the fewest waiting calls (or the Cal.com host) and logs it as "assigned automatically". A person's decision made a moment earlier is never overwritten. Set the grace period to 0 to switch this off. |
+| A call arrives outside working hours (night, Sunday, holiday) | At 09:00 the next working day, **one** digest to each front desk officer listing every call waiting to be assigned. |
+| A call is assigned | The designer is messaged straight away ("assigned to you by ...") with Open and Acknowledge. Their 1 working hour to acknowledge **starts now**, not when the caller rang. |
+| The designer has not acknowledged within 1 working hour of being assigned | One reminder to that designer. |
+| Booked slot is 30 minutes away and the call is not acknowledged (or not even assigned) | Urgent message to the designer, or to the front desk if nobody has it yet, with a copy to the studio head. |
+| Booking cancelled or rescheduled | The call updates and whoever has it is told. |
 | Designer acknowledges (dashboard, Telegram, or HubSpot) | Pending reminders for that call are cancelled. |
-| Working hours or SLA changed in Settings | Every pending reminder is recomputed. |
+| A call is reassigned before acknowledgement | The previous designer's reminder is cancelled and the new designer's clock starts. After acknowledgement it can no longer be moved. |
+| Disqualified calls | Nobody is chased about them. They stay visible, and an override (with a reason) brings one into the normal flow. |
+| Working hours or deadlines changed in Settings | Every pending reminder is recomputed. |
+
+Only front desk officers can assign from Telegram, and only designers can acknowledge there. In "the app assigns every call straight away" mode the first stage is skipped, and the front desk can still move a call.
 
 Reminders carry caller name, score, status, booked slot and a deep link, with Open and Acknowledge buttons. The digest has Open buttons only, because acknowledging means "I have read this".
 

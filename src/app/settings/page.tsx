@@ -20,21 +20,21 @@ export default async function SettingsPage() {
         <h2 id="hours" className="mb-4 text-small font-medium text-mute">
           Hours, SLA and AI model
         </h2>
-        <SettingsForm s={{ workStart: s.workStart, workEnd: s.workEnd, workDays: s.workDays, holidays: s.holidays, slaMinutes: s.slaMinutes, slotAlertMinutes: s.slotAlertMinutes, aiModel: s.aiModel }} />
+        <SettingsForm s={{ workStart: s.workStart, workEnd: s.workEnd, workDays: s.workDays, holidays: s.holidays, slaMinutes: s.slaMinutes, assignSlaMinutes: s.assignSlaMinutes, autoAssignAfterMinutes: s.autoAssignAfterMinutes, assignmentMode: s.assignmentMode, slotAlertMinutes: s.slotAlertMinutes, aiModel: s.aiModel }} />
       </section>
 
       <section aria-labelledby="designers" className="mb-12">
         <h2 id="designers" className="text-small font-medium text-mute">
-          Designers
+          People
         </h2>
-        <p className="mt-1 text-small text-mute">New calls rotate through everyone who takes new calls, in this order. The studio head gets complaints and a copy of urgent alerts.</p>
+        <p className="mt-1 text-small text-mute">Front desk officers assign calls to designers. Designers acknowledge them. The studio head (a designer) gets complaints and a copy of urgent alerts.</p>
         <ul className="mt-2 border-t border-line">
           {designers.map((d) => (
-            <DesignerRow key={d.id} d={{ id: d.id, name: d.name, telegramChatId: d.telegramChatId, hubspotOwnerId: d.hubspotOwnerId, calcomUser: d.calcomUser, active: d.active, isEscalation: d.isEscalation }} />
+            <DesignerRow key={d.id} d={{ id: d.id, name: d.name, telegramChatId: d.telegramChatId, hubspotOwnerId: d.hubspotOwnerId, calcomUser: d.calcomUser, active: d.active, isEscalation: d.isEscalation, role: d.role }} />
           ))}
         </ul>
         <div className="mt-6">
-          <h3 className="mb-3 text-small font-medium text-mute">Add a designer</h3>
+          <h3 className="mb-3 text-small font-medium text-mute">Add a person</h3>
           <AddDesignerForm />
         </div>
       </section>

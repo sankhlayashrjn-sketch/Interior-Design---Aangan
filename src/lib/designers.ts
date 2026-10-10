@@ -3,6 +3,7 @@ import { db, one, schema } from "@/db";
 import { env } from "@/lib/env";
 import { getMe } from "@/lib/telegram";
 import { createLinkCode } from "@/lib/telegram-bot";
+import { ROLES, type Role } from "@/db/schema";
 import { UserError } from "@/lib/calls";
 
 export interface DesignerInput {
@@ -12,6 +13,7 @@ export interface DesignerInput {
   calcomUser: string | null;
   active: boolean;
   isEscalation: boolean;
+  role?: Role;
 }
 
 const blank = (v: string | null | undefined) => {
@@ -33,13 +35,16 @@ async function clean(raw: DesignerInput, selfId?: number): Promise<DesignerInput
     const clash = await one(db.select().from(schema.designers).where(and(eq(schema.designers.telegramChatId, telegramChatId), selfId ? ne(schema.designers.id, selfId) : undefined)).limit(1));
     if (clash) throw new UserError(`That Telegram chat is already linked to ${clash.name}`);
   }
-  return { name, telegramChatId, hubspotOwnerId, calcomUser: calcom, active: raw.active, isEscalation: raw.isEscalation };
+  const role: Role = raw.role ?? "designer";
+  if (!ROLES.includes(role)) throw new UserError("Choose a role");
+  // The studio head is a designer who receives escalations; a front desk officer is neither.
+  return { name, telegramChatId, hubspotOwnerId, calcomUser: calcom, active: raw.active, isEscalation: role === "designer" && raw.isEscalation, role };
 }
 
 /** At least one active designer who takes new calls must always remain, or round-robin has nobody to assign to. */
 async function assertRotationNotEmpty(selfId: number | null, next: DesignerInput) {
-  const others = (await db.select().from(schema.designers)).filter((d) => d.id !== selfId && d.active && !d.isEscalation);
-  const selfCounts = next.active && !next.isEscalation;
+  const others = (await db.select().from(schema.designers)).filter((d) => d.id !== selfId && d.active && d.role === "designer" && !d.isEscalation);
+  const selfCounts = next.active && (next.role ?? "designer") === "designer" && !next.isEscalation;
   if (others.length === 0 && !selfCounts) throw new UserError("At least one active designer (not the studio head) must take new calls");
 }
 

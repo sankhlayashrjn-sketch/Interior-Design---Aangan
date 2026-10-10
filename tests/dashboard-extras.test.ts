@@ -260,6 +260,7 @@ describe("founder: trend, designers, funnel", () => {
     expect(f.map((s) => [s.label, s.count, s.pct])).toEqual([
       ["Calls", 5, 100],
       ["Qualified", 3, 60],
+      ["Assigned to a designer", 5, 100],
       ["Acknowledged by a designer", 3, 60],
       ["Booked a consultation", 1, 20],
     ]);

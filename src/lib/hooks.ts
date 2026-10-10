@@ -7,8 +7,8 @@ import { audit } from "@/lib/audit";
 export interface Events {
   /** A call was saved (before AI processing). */
   "call.received": { callId: number };
-  /** A call was handed to a different designer (for example the owner was changed in HubSpot). */
-  "call.reassigned": { callId: number };
+  /** A call was given to a designer (by the front desk, automatically, or because the owner changed in HubSpot). */
+  "call.assigned": { callId: number };
   /** A call finished AI processing and was assigned. */
   "call.processed": { callId: number };
   /** A designer acknowledged. */

@@ -60,7 +60,7 @@ describe("in-hours call: reminder after one WORKING hour", () => {
     expect(m.text).toMatch(/Priya/); // caller name
     expect(m.text).toMatch(/Qualified/); // status
     expect(m.text).toMatch(/score 9\d/); // score
-    expect(m.text).toContain(`call=${c.id}`); // deep link
+    expect(m.text).toContain(`/call/${c.id}`); // deep link
     const labels = m.buttons.flat().map((b) => b.text);
     expect(labels).toEqual(expect.arrayContaining(["Acknowledge"]));
     expect(m.buttons.flat().find((b) => b.text === "Acknowledge")!.callback_data).toBe(`ack:${c.id}`);
@@ -111,7 +111,7 @@ describe("after-hours calls: ONE digest at 09:00 next working day", () => {
     const text = (await sends())[0].text;
     expect(text).toMatch(/3 calls are waiting/);
     expect(text.match(/score \d+/g)).toHaveLength(3);
-    expect(text.match(/call=\d+/g)).toHaveLength(3);
+    expect(text.match(/\/call\/\d+/g)).toHaveLength(3);
     // acknowledgement is not offered in the digest
     expect((await sends())[0].buttons.flat().some((b) => b.callback_data)).toBe(false);
   });
@@ -156,7 +156,7 @@ describe("booked slot: urgent alert if still unacknowledged 30 minutes before", 
     const urgent = (await sends()).filter((s) => /URGENT/.test(s.text));
     expect(urgent.map((s) => s.chatId).sort()).toEqual(["111", "555"]);
     expect(urgent[0].text).toMatch(/Booked:/);
-    expect(urgent[0].text).toContain(`call=${c.id}`);
+    expect(urgent[0].text).toContain(`/call/${c.id}`);
     expect(urgent.find((s) => s.chatId === "555")!.text).toMatch(/copy: assigned to Aryan/);
   });
 
@@ -191,7 +191,7 @@ describe("booking cancelled or rescheduled", () => {
     expect((await jobs("slot"))[0].runAt.toISOString()).toBe(istIso("2026-10-08 15:30"));
     const msg = (await sends()).find((s) => /rescheduled/i.test(s.text))!;
     expect(msg.chatId).toBe("111");
-    expect(msg.text).toContain(`call=${c.id}`);
+    expect(msg.text).toContain(`/call/${c.id}`);
     expect((await one(db.select().from(schema.calls).where(eq(schema.calls.id, c.id))))!.bookingStatus).toBe("rescheduled");
   });
 

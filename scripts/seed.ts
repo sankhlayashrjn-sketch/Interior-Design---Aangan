@@ -4,8 +4,8 @@ import { db, runMigrations, schema } from "@/db";
 import { setAutoPush } from "@/lib/hubspot/sync";
 import { ingestCall } from "@/lib/ingest";
 import { SEED_NOTE } from "@/lib/reminders";
-import { getSettings } from "@/lib/settings";
-import { IST } from "@/lib/working-hours";
+import { getSettings, hoursConfig } from "@/lib/settings";
+import { addWorkingMinutes, IST } from "@/lib/working-hours";
 import samples from "@/seed/sample-calls.json";
 
 // Demo data must never reach real systems.
@@ -33,6 +33,15 @@ async function seedDesigners() {
   } else {
     console.log("Designers already present, skipping.");
   }
+
+  if (!(await db.select().from(schema.designers)).some((d) => d.role === "front_desk")) {
+    // Invented names: replace them in Settings with the real front desk team.
+    await db.insert(schema.designers).values([
+      { name: "Sneha Patil", role: "front_desk", rrOrder: 201 },
+      { name: "Imran Shaikh", role: "front_desk", rrOrder: 202 },
+    ]);
+    console.log("Seeded 2 front desk officers (set their Telegram chats in Settings).");
+  }
 }
 
 /**
@@ -49,6 +58,11 @@ const BOOKED: Record<string, { days: number; time: string }> = { T01: { days: 1,
 
 async function main() {
 await seedDesigners();
+const settings = await getSettings();
+const people = await db.select().from(schema.designers);
+const designers = people.filter((d) => d.active && d.role === "designer" && !d.isEscalation);
+const officer = people.find((d) => d.role === "front_desk")!;
+let handed = 0;
 let created = 0;
 for (let i = 0; i < SEED.length; i++) {
   const s = SEED[i];
@@ -74,11 +88,22 @@ for (let i = 0; i < SEED.length; i++) {
   });
   if (outcome === "created") created++;
 
-  // Older qualified calls were already picked up by their designer.
-  if ((DAYS_AGO[i] ?? 0) >= 2 && call.status === "qualified" && !call.acknowledgedAt && call.assignedDesignerId) {
+  // Calls from before yesterday were already handed over by the front desk; the last two days are left in the inbox to assign.
+  // Older qualified calls were also acknowledged by their designer.
+  const age = DAYS_AGO[i] ?? 0;
+  if (age >= 2 && (call.status === "qualified" || call.status === "needs_attention") && !call.assignedDesignerId) {
+    const designer = designers[handed++ % designers.length];
+    const assignedAt = new Date(when.toMillis() + 10 * 60_000);
     await db
       .update(schema.calls)
-      .set({ acknowledgedAt: new Date(when.toMillis() + 25 * 60_000), acknowledgedBy: call.assignedDesignerId })
+      .set({
+        assignedDesignerId: designer.id,
+        assignedAt,
+        assignedBy: officer.id,
+        assignedHow: "front_desk",
+        dueAt: addWorkingMinutes(assignedAt, settings.slaMinutes, hoursConfig(settings)),
+        ...(age >= 2 && call.status === "qualified" ? { acknowledgedAt: new Date(when.toMillis() + 35 * 60_000), acknowledgedBy: designer.id } : {}),
+      })
       .where(eq(schema.calls.id, call.id));
   }
 }

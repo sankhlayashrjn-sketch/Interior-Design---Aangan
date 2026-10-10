@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db, one, schema } from "@/db";
-import { acknowledgeCall, UserError } from "@/lib/calls";
+import { acknowledgeCall, assignCall, UserError } from "@/lib/calls";
 import { answerCallback, clearButtons, reply } from "@/lib/telegram";
 
 const CODE_TTL_MS = 48 * 3_600_000;
@@ -42,17 +42,28 @@ async function onStart(chatId: number, text: string, now: Date) {
 
 async function onCallback(q: NonNullable<TgUpdate["callback_query"]>) {
   const chatId = q.message?.chat.id;
-  const m = /^ack:(\d+)$/.exec(q.data ?? "");
-  if (!chatId || !m) return answerCallback(q.id, "Unknown action");
+  const ack = /^ack:(\d+)$/.exec(q.data ?? "");
+  const asg = /^asg:(\d+):(\d+)$/.exec(q.data ?? "");
+  if (!chatId || (!ack && !asg)) return answerCallback(q.id, "Unknown action");
   const d = await designerByChat(chatId);
-  if (!d) return answerCallback(q.id, "This chat is not linked to a designer");
+  if (!d) return answerCallback(q.id, "This chat is not linked to anyone");
+  let done = "Acknowledged";
   try {
-    await acknowledgeCall(Number(m[1]), d.id); // same path as the dashboard button: cancels reminders, updates HubSpot
+    if (asg) {
+      // Only front desk officers assign, whoever else happens to hold the message.
+      if (d.role !== "front_desk") return answerCallback(q.id, "Only the front desk can assign calls");
+      const call = await assignCall(Number(asg[1]), Number(asg[2]), { id: d.id, how: "front_desk" });
+      const to = await one(db.select().from(schema.designers).where(eq(schema.designers.id, call.assignedDesignerId ?? -1)));
+      done = `Assigned to ${to?.name ?? "the designer"}`;
+    } else {
+      if (d.role === "front_desk") return answerCallback(q.id, "Designers acknowledge calls, the front desk assigns them");
+      await acknowledgeCall(Number(ack![1]), d.id); // same path as the dashboard button: cancels reminders, updates HubSpot
+    }
   } catch (e) {
     if (e instanceof UserError) return answerCallback(q.id, e.message);
     throw e;
   }
-  await answerCallback(q.id, "Acknowledged");
+  await answerCallback(q.id, done);
   if (q.message) await clearButtons(String(chatId), q.message.message_id);
 }
 

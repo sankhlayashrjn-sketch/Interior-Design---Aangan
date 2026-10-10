@@ -236,7 +236,7 @@ export async function pollHubSpot(now: Date = new Date(), api: HubSpotApi = getH
 
 async function applyInbound(deal: DealRecord, statusOfStage: Map<string, CallStatus>, now: Date): Promise<number> {
   // Loaded lazily: calls.ts pulls in the runtime, which registers these handlers, so a static import would be circular.
-  const { acknowledgeCall, applyExternalStatus, reassignCall } = await import("@/lib/calls");
+  const { acknowledgeCall, applyExternalStatus, reassignCall, UserError } = await import("@/lib/calls");
   const call = await one(db.select().from(schema.calls).where(eq(schema.calls.hubspotDealId, deal.id)).limit(1));
   const row = call ? await syncRow(call.id) : undefined;
   if (!call || !row || row.dirty) return 0; // not ours, or the app has unsent changes and wins
@@ -263,8 +263,19 @@ async function applyInbound(deal: DealRecord, statusOfStage: Map<string, CallSta
   const ackValue = p.acknowledged_at || null;
   if (ackValue && !call.acknowledgedAt && ackValue !== row.lastSeenAckAt) {
     const when = parseWhen(ackValue) ?? now;
-    await acknowledgeCall(call.id, ownerDesigner?.id ?? call.assignedDesignerId ?? 0, when);
-    changes++;
+    // Only a designer can acknowledge. A call nobody has been given yet cannot be acknowledged from HubSpot.
+    const by = call.assignedDesignerId ?? (ownerDesigner?.role === "designer" ? ownerDesigner.id : null);
+    if (by) {
+      try {
+        if (!call.assignedDesignerId) await reassignCall(call.id, by);
+        await acknowledgeCall(call.id, by, when);
+        changes++;
+      } catch (e) {
+        if (!(e instanceof UserError)) throw e;
+      }
+    } else {
+      await markDirty(call.id, true); // tell HubSpot the call is still unacknowledged
+    }
   } else if (!ackValue && call.acknowledgedAt) {
     await markDirty(call.id, true); // cleared in HubSpot but the app has an acknowledgement: the app is right
   }
@@ -275,8 +286,13 @@ async function applyInbound(deal: DealRecord, statusOfStage: Map<string, CallSta
   if (owner && owner !== row.lastSeenOwner) {
     patch.lastSeenOwner = owner;
     if (ownerDesigner && ownerDesigner.id !== call.assignedDesignerId) {
-      await reassignCall(call.id, ownerDesigner.id);
-      changes++;
+      try {
+        await reassignCall(call.id, ownerDesigner.id);
+        changes++;
+      } catch (e) {
+        if (!(e instanceof UserError)) throw e; // the new owner is not a designer, or the call is already acknowledged: keep the app's assignment
+        await markDirty(call.id, true);
+      }
     }
   }
 
@@ -314,7 +330,7 @@ export function registerHubSpotHandlers() {
   on("call.processed", push);
   on("call.acknowledged", push);
   on("call.overridden", push);
-  on("call.reassigned", push);
+  on("call.assigned", push);
   on("booking.changed", push);
 }
 

@@ -223,10 +223,11 @@ export async function processCall(callId: number): Promise<Call> {
   }
 
   const bookingRow = call.bookingId ? await one(db.select().from(schema.bookings).where(eq(schema.bookings.calcomUid, call.bookingId))) : undefined;
-  const plan = planReminder(call.startedAt, settings.slaMinutes, hours);
+  // Whether it arrived outside working hours. The deadlines (to assign, to acknowledge) are set by the reminder engine.
+  const afterHours = planReminder(call.startedAt, settings.assignSlaMinutes, hours).afterHours;
   const o = scored.output;
 
-  const update: Partial<Call> = { processedAt: new Date(), dueAt: plan.dueAt, afterHours: plan.afterHours };
+  const update: Partial<Call> = { processedAt: new Date(), afterHours };
   let escalate = false;
 
   if (o) {
@@ -266,7 +267,16 @@ export async function processCall(callId: number): Promise<Call> {
     });
   }
 
-  update.assignedDesignerId = await assignDesigner({ callId, bookingHostDesignerId: bookingRow?.hostDesignerId ?? null, escalate });
+  // Who gets the call now. In manual mode only a Cal.com booking host is assigned straight away; everything else waits
+  // in the front desk inbox. In automatic mode the app assigns it at once, recorded as assigned when the call arrived.
+  const hostId = bookingRow?.hostDesignerId ?? null;
+  if (hostId || settings.assignmentMode === "auto") {
+    update.assignedDesignerId = await assignDesigner({ callId, bookingHostDesignerId: hostId, escalate });
+    if (update.assignedDesignerId) {
+      update.assignedAt = hostId ? new Date() : call.startedAt;
+      update.assignedHow = hostId ? "booking_host" : "auto";
+    }
+  }
 
   await db.transaction(async (tx) => {
     await tx.update(schema.calls).set(update).where(eq(schema.calls.id, callId));

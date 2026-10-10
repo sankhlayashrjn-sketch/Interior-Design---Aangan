@@ -38,11 +38,14 @@ export async function saveSettingsAction(_prev: FormState, f: FormData): Promise
       workDays: f.getAll("workDays").map(Number),
       holidays,
       slaMinutes: toNumber(f, "slaMinutes"),
+      assignSlaMinutes: toNumber(f, "assignSlaMinutes"),
+      autoAssignAfterMinutes: toNumber(f, "autoAssignAfterMinutes"),
+      assignmentMode: text(f, "assignmentMode") || undefined,
       slotAlertMinutes: toNumber(f, "slotAlertMinutes"),
       aiModel: text(f, "aiModel"),
     });
     revalidatePath("/settings");
-    const rescheduled = (["workStart", "workEnd", "workDays", "holidays", "slaMinutes", "slotAlertMinutes"] as const).some((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
+    const rescheduled = (["workStart", "workEnd", "workDays", "holidays", "slaMinutes", "slotAlertMinutes", "assignSlaMinutes", "autoAssignAfterMinutes", "assignmentMode"] as const).some((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
     return { ok: rescheduled ? "Saved. Pending reminders were recomputed for the new hours." : "Saved." };
   } catch (e) {
     return { error: message(e) };
@@ -57,6 +60,7 @@ function designerFrom(f: FormData): DesignerInput {
     calcomUser: text(f, "calcomUser"),
     active: f.get("active") === "on",
     isEscalation: f.get("isEscalation") === "on",
+    role: text(f, "role") === "front_desk" ? "front_desk" : "designer",
   };
 }
 
@@ -74,7 +78,7 @@ export async function addDesignerAction(_prev: FormState, f: FormData): Promise<
   try {
     await addDesigner({ ...designerFrom(f), active: true, isEscalation: false });
     revalidatePath("/settings");
-    return { ok: "Designer added" };
+    return { ok: "Added" };
   } catch (e) {
     return { error: message(e) };
   }

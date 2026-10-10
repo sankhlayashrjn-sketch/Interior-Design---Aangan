@@ -29,6 +29,9 @@ export interface SettingsData {
   workDays: number[];
   holidays: string[];
   slaMinutes: number;
+  assignSlaMinutes: number;
+  autoAssignAfterMinutes: number;
+  assignmentMode: "manual" | "auto";
   slotAlertMinutes: number;
   aiModel: string;
 }
@@ -65,10 +68,42 @@ export function SettingsForm({ s }: { s: SettingsData }) {
         <textarea id="holidays" name="holidays" rows={3} defaultValue={s.holidays.join("\n")} className={`${input} max-w-xs`} />
       </div>
 
+      <fieldset>
+        <legend className={label}>How calls reach designers</legend>
+        <div className="mt-1 space-y-2">
+          <label className="flex items-start gap-2">
+            <input type="radio" name="assignmentMode" value="manual" defaultChecked={s.assignmentMode === "manual"} className="mt-1" />
+            <span>
+              The front desk assigns each call
+              <span className="block text-small text-mute">Qualified and needs-attention calls wait in the front desk inbox. If nobody assigns one in time, the app gives it to the designer with the fewest waiting calls.</span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2">
+            <input type="radio" name="assignmentMode" value="auto" defaultChecked={s.assignmentMode === "auto"} className="mt-1" />
+            <span>
+              The app assigns every call straight away
+              <span className="block text-small text-mute">By workload, or to the Cal.com host if the caller booked a slot. The front desk can still move a call before it is acknowledged.</span>
+            </span>
+          </label>
+        </div>
+      </fieldset>
+
       <div className="grid max-w-xl gap-4 sm:grid-cols-2">
         <div>
+          <label htmlFor="asla" className={label}>
+            Front desk: assign within (working minutes)
+          </label>
+          <input id="asla" name="assignSlaMinutes" type="number" min={1} max={1440} defaultValue={s.assignSlaMinutes} required className={input} />
+        </div>
+        <div>
+          <label htmlFor="auto" className={label}>
+            Then auto-assign after (working minutes, 0 = never)
+          </label>
+          <input id="auto" name="autoAssignAfterMinutes" type="number" min={0} max={4320} defaultValue={s.autoAssignAfterMinutes} required className={input} />
+        </div>
+        <div>
           <label htmlFor="sla" className={label}>
-            SLA: acknowledge within (working minutes)
+            Designer: acknowledge within (working minutes after assignment)
           </label>
           <input id="sla" name="slaMinutes" type="number" min={1} max={1440} defaultValue={s.slaMinutes} required className={input} />
         </div>
@@ -105,7 +140,15 @@ export interface DesignerData {
   calcomUser: string | null;
   active: boolean;
   isEscalation: boolean;
+  role: "designer" | "front_desk";
 }
+
+const ROLE_SELECT = (id: string, defaultValue: string) => (
+  <select id={id} name="role" defaultValue={defaultValue} className={input}>
+    <option value="designer">Designer</option>
+    <option value="front_desk">Front desk officer</option>
+  </select>
+);
 
 export function DesignerRow({ d }: { d: DesignerData }) {
   const [state, action, pending] = useActionState<FormState, FormData>(saveDesignerAction, {});
@@ -138,14 +181,20 @@ export function DesignerRow({ d }: { d: DesignerData }) {
           </label>
           <input id={`c${d.id}`} name="calcomUser" defaultValue={d.calcomUser ?? ""} placeholder="username or email" className={input} />
         </div>
+        <div>
+          <label htmlFor={`r${d.id}`} className={label}>
+            Role
+          </label>
+          {ROLE_SELECT(`r${d.id}`, d.role)}
+        </div>
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 sm:col-span-2 lg:col-span-4">
           <label className="flex items-center gap-2">
             <input type="checkbox" name="active" defaultChecked={d.active} />
-            Takes new calls
+            Active (designers take calls, front desk assigns them)
           </label>
           <label className="flex items-center gap-2">
             <input type="checkbox" name="isEscalation" defaultChecked={d.isEscalation} />
-            Studio head (complaints, and copies of urgent alerts)
+            Studio head (designers only: complaints, and copies of urgent alerts)
           </label>
           <button type="submit" disabled={pending} className="rounded border border-ink px-3 py-1.5 font-medium disabled:opacity-50">
             {pending ? "Saving" : "Save"}
@@ -194,9 +243,15 @@ export function AddDesignerForm() {
         <input id="new-cal" name="calcomUser" className={input} />
       </div>
       <input type="hidden" name="telegramChatId" value="" />
+      <div>
+        <label htmlFor="new-role" className={label}>
+          Role
+        </label>
+        {ROLE_SELECT("new-role", "designer")}
+      </div>
       <div className="flex items-end gap-3">
         <button type="submit" disabled={pending} className="rounded border border-ink px-3 py-1.5 font-medium disabled:opacity-50">
-          Add designer
+          Add person
         </button>
       </div>
       <div className="sm:col-span-2 lg:col-span-4">

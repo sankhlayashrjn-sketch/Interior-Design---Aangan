@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const LINKS = [
-  { href: "/", label: "Dashboard" },
+  { href: "/", label: "Front desk" },
+  { href: "/designers", label: "Designers" },
   { href: "/founder", label: "Founder" },
   { href: "/simulate", label: "Simulate call" },
   { href: "/settings", label: "Settings" },
@@ -15,7 +16,7 @@ export function Nav() {
   return (
     <nav aria-label="Main" className="flex flex-wrap gap-x-5 gap-y-1">
       {LINKS.map((l) => {
-        const active = l.href === "/" ? path === "/" : path.startsWith(l.href);
+        const active = l.href === "/" ? path === "/" || path.startsWith("/call/") : path.startsWith(l.href);
         return (
           <Link key={l.href} href={l.href} aria-current={active ? "page" : undefined} className={active ? "font-medium text-ink" : "text-mute hover:text-ink"}>
             {l.label}

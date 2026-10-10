@@ -24,7 +24,8 @@ const check = (name: string, ok: boolean, detail?: string) => {
 async function main() {
   const { sql, eq } = await import("drizzle-orm");
   const { db, one, runMigrations, schema, withLease } = await import("@/db");
-  const { acknowledgeCall, overrideStatus } = await import("@/lib/calls");
+  const { acknowledgeCall, assignCall, listForFrontDesk, overrideStatus } = await import("@/lib/calls");
+  const { suggestDesignerFor } = await import("@/lib/assignment");
   const { costPanel, founderList, founderMetrics, statusCounts } = await import("@/lib/founder");
   const { setAutoPush, syncDirty } = await import("@/lib/hubspot/sync");
   const { ingestCall } = await import("@/lib/ingest");
@@ -49,7 +50,9 @@ async function main() {
       { name: "Smoke A", rrOrder: 1, telegramChatId: "100001" },
       { name: "Smoke B", rrOrder: 2 },
       { name: "Smoke Head", rrOrder: 99, isEscalation: true },
+      { name: "Smoke Desk", rrOrder: 200, role: "front_desk", telegramChatId: "100002" },
     ]);
+    const [A, B, head, desk] = await db.select().from(schema.designers).orderBy(schema.designers.id);
 
     // The most recent working day (not Sunday) at 11:00 IST: in hours and well past its one-hour deadline,
     // whatever time of day this test runs.
@@ -68,9 +71,13 @@ async function main() {
 
     check("a good enquiry is scored qualified", good.status === "qualified", `score ${good.score}`);
     check("an out-of-area enquiry is disqualified but kept, with its reason", bad.status === "disqualified" && !!bad.reason, bad.reason ?? "");
-    check("a complaint goes to the studio head", angry.flag === "existing_client");
-    const names = await Promise.all([good, bad, angry].map(async (c) => (await one(db.select().from(schema.designers).where(eq(schema.designers.id, c.assignedDesignerId!))))!.name));
-    check("round-robin rotates and the complaint reaches the studio head", names[0] === "Smoke A" && names[1] === "Smoke B" && names[2] === "Smoke Head", names.join(", "));
+    check("a complaint is flagged as an existing client", angry.flag === "existing_client");
+    check("nothing is assigned until the front desk does it", [good, bad, angry].every((c) => c.assignedDesignerId === null));
+    check("the suggestions are the first designer, and the studio head for the complaint", (await suggestDesignerFor(good)) === A.id && (await suggestDesignerFor(angry)) === head.id);
+    await assignCall(good.id, A.id, { id: desk.id, how: "front_desk" });
+    await assignCall(angry.id, head.id, { id: desk.id, how: "front_desk" });
+    const assigned = await Promise.all([good, angry].map(async (c) => (await one(db.select().from(schema.calls).where(eq(schema.calls.id, c.id))))!));
+    check("the front desk assigns calls and it is recorded", assigned.every((c) => c.assignedBy === desk.id && c.assignedHow === "front_desk" && !!c.dueAt));
     check("a cost row is written for every call", (await db.select().from(schema.callsCost)).length === 3);
     check("reminders are queued", (await db.select().from(schema.reminderJobs)).length > 0);
 
@@ -79,14 +86,14 @@ async function main() {
     check("the same call arriving twice at once is stored once", [r1.outcome, r2.outcome].sort().join() === "created,duplicate");
 
     const tick = await runTick();
-    check("a tick sends the overdue reminder", tick.reminders.sent >= 1, `sent ${tick.reminders.sent}`);
+    check("a tick sends the overdue assign reminder and auto-assigns the call nobody took", tick.reminders.sent >= 1, `sent ${tick.reminders.sent}`);
     const again = await runTick();
     check("a second tick sends nothing new", again.reminders.sent === 0);
 
-    await acknowledgeCall(good.id, good.assignedDesignerId!);
+    await acknowledgeCall(good.id, A.id);
     const acked = await one(db.select().from(schema.calls).where(eq(schema.calls.id, good.id)));
     check("acknowledging is recorded", !!acked?.acknowledgedAt);
-    await overrideStatus(bad.id, bad.assignedDesignerId!, "qualified", "Smoke test override, has a Pune site too");
+    await overrideStatus(bad.id, desk.id, "qualified", "Smoke test override, has a Pune site too");
     check("an override is logged with its reason", (await db.select().from(schema.statusOverrides)).length === 1);
 
     const counts = await statusCounts();
@@ -94,7 +101,7 @@ async function main() {
     const cost = await costPanel("30d");
     check("founder counts add up", counts.qualified + counts.disqualified + counts.needs_attention + counts.yet_to_be_processed === 4, JSON.stringify(counts));
     check("founder metrics and cost panel compute", metrics.callsInRange === 4 && cost.month.calls === 4);
-    check("founder lists return rows with a designer", (await founderList("qualified")).every((c) => !!c.designerName));
+    check("a call overridden to qualified lands in the front desk inbox, and the founder list shows who has each call", (await listForFrontDesk("assign")).some((c) => c.id === bad.id) && (await founderList("qualified")).every((c) => !!c.designerName || c.id === bad.id));
 
     const hs = await syncDirty(); // the ticks already pushed most calls; this catches the ones changed since
     const withDeal = (await db.select().from(schema.calls)).filter((c) => !!c.hubspotDealId).length;

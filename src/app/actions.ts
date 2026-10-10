@@ -5,9 +5,11 @@ import { DateTime } from "luxon";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { acknowledgeCall, addNote, overrideStatus, UserError, activeDesigners } from "@/lib/calls";
+import { acknowledgeCall, addNote, assignCall, overrideStatus, UserError, activeDesigners } from "@/lib/calls";
+import { db, one, schema } from "@/db";
+import { eq } from "drizzle-orm";
 import { ingestCall } from "@/lib/ingest";
-import { DESIGNER_COOKIE, currentDesigner } from "@/lib/session";
+import { DESIGNER_COOKIE, currentDesigner, currentPerson } from "@/lib/session";
 import { IST } from "@/lib/working-hours";
 
 export interface ActionState {
@@ -36,19 +38,40 @@ export async function openAs(formData: FormData) {
   const id = Number(formData.get("designerId"));
   const callId = Number(formData.get("callId"));
   if ((await activeDesigners()).some((d) => d.id === id)) await setDesigner(id);
-  redirect(`/?tab=pending&call=${callId}`);
+  redirect(`/call/${callId}`);
 }
 
 export async function acknowledgeAction(formData: FormData) {
   const me = await currentDesigner();
   const callId = Number(formData.get("callId"));
   if (!me || !callId) return;
+  // A designer acknowledges their own call. Anyone else looking at the page (the demo's "viewing as") acts as its assignee.
+  const call = await one(db.select().from(schema.calls).where(eq(schema.calls.id, callId)));
+  const by = me.role === "designer" ? me.id : call?.assignedDesignerId;
+  if (!by) return;
   try {
-    await acknowledgeCall(callId, me.id);
+    await acknowledgeCall(callId, by);
   } catch (e) {
     if (!(e instanceof UserError)) throw e;
   }
-  revalidatePath("/");
+  revalidatePath("/", "layout");
+}
+
+/** The front desk gives a call to a designer, or moves it to another designer before it is acknowledged. */
+export async function assignAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const me = await currentPerson("front_desk");
+  if (!me) return { error: "Add a front desk officer in Settings first" };
+  const designerId = Number(formData.get("designerId"));
+  if (!designerId) return { error: "Choose a designer" };
+  try {
+    const call = await assignCall(Number(formData.get("callId")), designerId, { id: me.id, how: "front_desk" });
+    const to = (await activeDesigners()).find((d) => d.id === call.assignedDesignerId);
+    revalidatePath("/", "layout");
+    return { ok: `Assigned to ${to?.name ?? "the designer"}` };
+  } catch (e) {
+    if (e instanceof UserError) return { error: e.message };
+    throw e;
+  }
 }
 
 export async function overrideAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -60,7 +83,7 @@ export async function overrideAction(_prev: ActionState, formData: FormData): Pr
     if (e instanceof UserError) return { error: e.message };
     throw e;
   }
-  revalidatePath("/");
+  revalidatePath("/", "layout");
   return { ok: "Status changed and logged" };
 }
 
@@ -73,7 +96,7 @@ export async function addNoteAction(_prev: ActionState, formData: FormData): Pro
     if (e instanceof UserError) return { error: e.message };
     throw e;
   }
-  revalidatePath("/");
+  revalidatePath("/", "layout");
   return { ok: "Note saved" };
 }
 
@@ -101,7 +124,7 @@ export async function simulateAction(_prev: SimulateState, formData: FormData): 
       booked_slot: slot ? slot.toISO() : null,
     });
     const designer = (await activeDesigners()).find((d) => d.id === call.assignedDesignerId);
-    revalidatePath("/");
+    revalidatePath("/", "layout");
     return {
       result: { id: call.id, status: call.status, score: call.score, reason: call.reason, designerId: call.assignedDesignerId, designerName: designer?.name ?? null, afterHours: call.afterHours, duplicate: outcome === "duplicate" },
     };

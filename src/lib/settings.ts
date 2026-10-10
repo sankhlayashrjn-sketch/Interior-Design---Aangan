@@ -42,6 +42,9 @@ export const SettingsPatchSchema = z
     workDays: z.array(z.number().int().min(1).max(7)).min(1, "Pick at least one working day"),
     holidays: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD")),
     slaMinutes: z.number().int().min(1).max(1440),
+    assignSlaMinutes: z.number().int().min(1).max(1440),
+    autoAssignAfterMinutes: z.number().int().min(0).max(4320),
+    assignmentMode: z.enum(["manual", "auto"]),
     slotAlertMinutes: z.number().int().min(0).max(1440),
     aiModel: z.string().trim().min(1),
     minCommercialSqft: z.number().int().min(0),
@@ -50,7 +53,7 @@ export const SettingsPatchSchema = z
   })
   .partial();
 
-const SCHEDULE_KEYS = ["workStart", "workEnd", "workDays", "holidays", "slaMinutes", "slotAlertMinutes"] as const;
+const SCHEDULE_KEYS = ["workStart", "workEnd", "workDays", "holidays", "slaMinutes", "slotAlertMinutes", "assignSlaMinutes", "autoAssignAfterMinutes", "assignmentMode"] as const;
 
 /**
  * Validate and save settings. If anything that affects reminders changed, emit settings.changed so

@@ -27,13 +27,14 @@ export interface SendResult {
 
 const isHttps = (u: string) => /^https:\/\//i.test(u);
 
-/** Deep link into the dashboard for one call. */
+/** One stable link per call. The app sends you to the right screen: the front desk inbox if nobody has it yet, otherwise the designer's page. */
 export function deepLink(callId: number): string {
-  return `${env.APP_BASE_URL.replace(/\/$/, "")}/?tab=pending&call=${callId}`;
+  return `${env.APP_BASE_URL.replace(/\/$/, "")}/call/${callId}`;
 }
 
-export function dashboardLink(): string {
-  return `${env.APP_BASE_URL.replace(/\/$/, "")}/?tab=pending`;
+/** The front desk inbox, or the designers' page. */
+export function dashboardLink(audience: "front_desk" | "designer" = "designer"): string {
+  return `${env.APP_BASE_URL.replace(/\/$/, "")}${audience === "front_desk" ? "/" : "/designers"}`;
 }
 
 /** Inline buttons that Telegram will accept. An http:// (for example localhost) URL button is dropped; the link stays in the text. */

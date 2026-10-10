@@ -41,6 +41,19 @@ export interface FounderMetrics {
   avgAckMinutes: number | null;
   ackCount: number;
   booked: number;
+  /** The front desk's side: how quickly calls were given to a designer. */
+  assign: {
+    /** Of calls whose assignment deadline has passed or that were assigned: the share assigned on time. */
+    pct: number | null;
+    met: number;
+    total: number;
+    /** Average WORKING minutes from the call to its assignment. */
+    avgMinutes: number | null;
+    /** Assigned by the app because nobody did it in time. */
+    auto: number;
+    /** Qualified or needs-attention calls nobody has assigned yet, right now. */
+    waiting: number;
+  };
 }
 
 export async function founderMetrics(range: Range, now: Date = new Date()): Promise<FounderMetrics> {
@@ -53,8 +66,15 @@ export async function founderMetrics(range: Range, now: Date = new Date()): Prom
   const met = judged.filter((c) => c.acknowledgedAt && c.dueAt && c.acknowledgedAt.getTime() <= c.dueAt.getTime()).length;
 
   const acked = rows.filter((c) => c.acknowledgedAt);
-  const minutes = acked.map((c) => workingMinutesBetween(c.startedAt, c.acknowledgedAt!, cfg));
+  // The designer's clock starts when the call was given to them.
+  const minutes = acked.map((c) => workingMinutesBetween(c.assignedAt ?? c.startedAt, c.acknowledgedAt!, cfg));
   const afterHours = rows.filter((c) => c.afterHours);
+
+  const handled = rows.filter((c) => c.assignedAt && c.assignedHow !== "booking_host" && c.assignedHow !== "hubspot");
+  const assignJudged = rows.filter((c) => (c.assignedAt && c.assignedHow !== "auto") || (c.assignDueAt && c.assignDueAt.getTime() < now.getTime() && !c.assignedAt));
+  const assignMet = assignJudged.filter((c) => c.assignedAt && c.assignDueAt && c.assignedAt.getTime() <= c.assignDueAt.getTime()).length;
+  const assignMinutes = handled.map((c) => workingMinutesBetween(c.startedAt, c.assignedAt!, cfg));
+  const waiting = (await db.select().from(schema.calls)).filter((c) => !c.assignedDesignerId && (c.status === "qualified" || c.status === "needs_attention")).length;
 
   return {
     callsToday: today.length,
@@ -64,6 +84,14 @@ export async function founderMetrics(range: Range, now: Date = new Date()): Prom
     avgAckMinutes: minutes.length ? minutes.reduce((a, b) => a + b, 0) / minutes.length : null,
     ackCount: acked.length,
     booked: rows.filter((c) => c.bookedSlot && c.bookingStatus !== "cancelled").length,
+    assign: {
+      pct: assignJudged.length ? Math.round((assignMet / assignJudged.length) * 100) : null,
+      met: assignMet,
+      total: assignJudged.length,
+      avgMinutes: assignMinutes.length ? assignMinutes.reduce((a, b) => a + b, 0) / assignMinutes.length : null,
+      auto: rows.filter((c) => c.assignedHow === "auto").length,
+      waiting,
+    },
   };
 }
 
@@ -174,7 +202,7 @@ export interface DesignerLoad {
 }
 
 export async function designerWorkload(range: Range, now: Date = new Date()): Promise<DesignerLoad[]> {
-  const designers = await db.select().from(schema.designers).where(eq(schema.designers.active, true));
+  const designers = await db.select().from(schema.designers).where(and(eq(schema.designers.active, true), eq(schema.designers.role, "designer")));
   const inRange = (await callsSince(rangeStart(range, now))).filter((c) => c.status !== "yet_to_be_processed");
   const everyone = await db.select().from(schema.calls);
   const cfg = await loadHours();
@@ -187,7 +215,7 @@ export async function designerWorkload(range: Range, now: Date = new Date()): Pr
       const judged = mine.filter((c) => c.acknowledgedAt || (c.dueAt && c.dueAt.getTime() < t));
       const onTime = judged.filter((c) => c.acknowledgedAt && c.dueAt && c.acknowledgedAt.getTime() <= c.dueAt.getTime()).length;
       const acked = mine.filter((c) => c.acknowledgedAt);
-      const minutes = acked.map((c) => workingMinutesBetween(c.startedAt, c.acknowledgedAt!, cfg));
+      const minutes = acked.map((c) => workingMinutesBetween(c.assignedAt ?? c.startedAt, c.acknowledgedAt!, cfg));
       return {
         id: d.id,
         name: d.name,
@@ -210,7 +238,7 @@ export interface FunnelStep {
   pct: number | null;
 }
 
-/** Calls -> qualified -> acknowledged -> booked a slot, for the period. */
+/** Calls -> qualified -> assigned -> acknowledged -> booked a slot, for the period. */
 export async function funnel(range: Range, now: Date = new Date()): Promise<FunnelStep[]> {
   const rows = (await callsSince(rangeStart(range, now))).filter((c) => c.status !== "yet_to_be_processed");
   const total = rows.length;
@@ -218,6 +246,7 @@ export async function funnel(range: Range, now: Date = new Date()): Promise<Funn
   return [
     step("Calls", total),
     step("Qualified", rows.filter((c) => c.status === "qualified").length),
+    step("Assigned to a designer", rows.filter((c) => c.assignedDesignerId).length),
     step("Acknowledged by a designer", rows.filter((c) => c.acknowledgedAt).length),
     step("Booked a consultation", rows.filter((c) => c.bookedSlot && c.bookingStatus !== "cancelled").length),
   ];

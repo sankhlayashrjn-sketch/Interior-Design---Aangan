@@ -1,6 +1,12 @@
 import { boolean, doublePrecision, index, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const CALL_STATUSES = ["yet_to_be_processed", "qualified", "disqualified", "needs_attention"] as const;
+export const ROLES = ["designer", "front_desk"] as const;
+export type Role = (typeof ROLES)[number];
+
+export const ASSIGN_HOW = ["front_desk", "auto", "booking_host", "hubspot"] as const;
+export type AssignHow = (typeof ASSIGN_HOW)[number];
+
 export type CallStatus = (typeof CALL_STATUSES)[number];
 
 export const CALL_FLAGS = ["none", "existing_client", "no_transcript", "ai_failed", "upset_caller"] as const;
@@ -19,6 +25,8 @@ export const designers = pgTable("designers", {
   hubspotOwnerId: text("hubspot_owner_id"),
   /** Cal.com username or email, used to map a booking host to this designer. */
   calcomUser: text("calcom_user"),
+  /** designer: takes calls. front_desk: reviews the inbox and assigns calls to designers. */
+  role: text("role", { enum: ROLES }).notNull().default("designer"),
   active: boolean("active").notNull().default(true),
   isEscalation: boolean("is_escalation").notNull().default(false),
   rrOrder: integer("rr_order").notNull().default(0),
@@ -32,6 +40,13 @@ export const settings = pgTable("settings", {
   /** ISO weekdays, 1 = Mon ... 7 = Sun. */
   workDays: jsonb("work_days").$type<number[]>().notNull().$defaultFn(() => [1, 2, 3, 4, 5, 6]),
   holidays: jsonb("holidays").$type<string[]>().notNull().$defaultFn(() => []),
+  /** How long the front desk has to assign a call (working minutes from when it arrived). */
+  assignSlaMinutes: integer("assign_sla_minutes").notNull().default(60),
+  /** If still unassigned this long after that deadline, the app assigns it by workload. 0 = never. */
+  autoAssignAfterMinutes: integer("auto_assign_after_minutes").notNull().default(60),
+  /** manual: the front desk assigns every call. auto: the app assigns each call as it is scored. */
+  assignmentMode: text("assignment_mode", { enum: ["manual", "auto"] }).notNull().default("manual"),
+  /** How long the designer has to acknowledge (working minutes from when the call was assigned to them). */
   slaMinutes: integer("sla_minutes").notNull().default(60),
   /** Urgent alert this many minutes before a booked slot if still unacknowledged. */
   slotAlertMinutes: integer("slot_alert_minutes").notNull().default(30),
@@ -86,6 +101,12 @@ export const calls = pgTable(
     bookingStatus: text("booking_status", { enum: ["booked", "rescheduled", "cancelled"] }),
 
     assignedDesignerId: integer("assigned_designer_id").references(() => designers.id),
+    assignedAt: ts("assigned_at"),
+    /** The front desk officer who assigned it (null when the app or HubSpot did). */
+    assignedBy: integer("assigned_by").references(() => designers.id),
+    assignedHow: text("assigned_how", { enum: ASSIGN_HOW }),
+    /** When the front desk should have assigned it by. */
+    assignDueAt: ts("assign_due_at"),
     afterHours: boolean("after_hours").notNull().default(false),
     /** Set when a worker claims the call for AI processing, so two servers never process the same call. */
     processingStartedAt: ts("processing_started_at"),
@@ -151,9 +172,10 @@ export const reminderJobs = pgTable(
   {
     id: serial("id").primaryKey(),
     /** sla: unacknowledged after the SLA. digest: 09:00 summary of pending calls. slot: unacknowledged shortly before a booked slot. */
-    kind: text("kind", { enum: ["sla", "digest", "slot"] }).notNull(),
+    kind: text("kind", { enum: ["sla", "digest", "slot", "assign", "autoassign"] }).notNull(),
     callId: integer("call_id").references(() => calls.id),
-    designerId: integer("designer_id").notNull().references(() => designers.id),
+    /** Who gets the message. Null for system actions (auto-assign). */
+    designerId: integer("designer_id").references(() => designers.id),
     runAt: ts("run_at").notNull(),
     state: text("state", { enum: ["pending", "sent", "cancelled"] }).notNull().default("pending"),
     createdAt: ts("created_at").notNull(),

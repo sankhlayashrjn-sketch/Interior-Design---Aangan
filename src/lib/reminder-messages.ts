@@ -47,14 +47,15 @@ export function digestMessage(calls: Call[], now: Date): OutMessage {
 
 /** A booked slot is close and nobody has acknowledged the call. */
 export function slotMessage(c: Call, minutesLeft: number, now: Date, copyFor?: string): OutMessage {
+  const unassigned = !c.assignedDesignerId;
   return {
     text: [
-      `URGENT: consultation in ${minutesLeft} min and the call is not acknowledged${copyFor ? ` (copy: assigned to ${copyFor})` : ""}`,
+      `URGENT: consultation in ${minutesLeft} min and the call is not ${unassigned ? "assigned to a designer" : "acknowledged"}${copyFor ? ` (copy: assigned to ${copyFor})` : ""}`,
       headline(c),
       ...detailLines(c, now),
       deepLink(c.id),
     ].join("\n"),
-    rows: buttonsFor(c, true),
+    rows: unassigned ? [[{ text: "Open", url: deepLink(c.id) }]] : buttonsFor(c, true),
   };
 }
 
@@ -63,5 +64,36 @@ export function bookingChangedMessage(c: Call, kind: "rescheduled" | "cancelled"
   return {
     text: [what, headline(c), deepLink(c.id)].join("\n"),
     rows: buttonsFor(c, !c.acknowledgedAt),
+  };
+}
+
+/** For the front desk: a call has waited too long to be assigned. One button per designer assigns it with a tap. */
+export function assignReminderMessage(c: Call, designers: { id: number; name: string }[], now: Date): OutMessage {
+  const pick = designers.map((d) => ({ text: d.name, callbackData: `asg:${c.id}:${d.id}` }));
+  const rows: { text: string; callbackData: string }[][] = [];
+  for (let i = 0; i < pick.length; i += 2) rows.push(pick.slice(i, i + 2));
+  return {
+    text: ["Waiting to be assigned to a designer", headline(c), ...detailLines(c, now), `Called ${fmtWhen(c.startedAt, now)}`, "Tap a designer to assign it, or open it.", deepLink(c.id)].join("\n"),
+    rows: [[{ text: "Open", url: deepLink(c.id) }], ...rows],
+  };
+}
+
+/** The front desk's 09:00 digest: ONE message listing every call still waiting to be assigned. */
+export function assignDigestMessage(calls: Call[], now: Date): OutMessage {
+  const MAX = 8;
+  const shown = calls.slice(0, MAX);
+  const lines = shown.map((c, i) => `${i + 1}. ${headline(c)}\n   ${deepLink(c.id)}`);
+  if (calls.length > MAX) lines.push(`and ${calls.length - MAX} more`);
+  return {
+    text: [`Good morning. ${calls.length} ${calls.length === 1 ? "call is" : "calls are"} waiting to be assigned:`, ...lines].join("\n"),
+    rows: [[{ text: "Open inbox", url: dashboardLink("front_desk") }], ...shown.map((c, i) => [{ text: `Open ${i + 1}`, url: deepLink(c.id) }])].slice(0, 6),
+  };
+}
+
+/** For the designer: a call has just been given to them. */
+export function assignedMessage(c: Call, now: Date, byName: string | null): OutMessage {
+  return {
+    text: [`A call has been assigned to you${byName ? ` by ${byName}` : ""}`, headline(c), ...detailLines(c, now), `Called ${fmtWhen(c.startedAt, now)}`, deepLink(c.id)].join("\n"),
+    rows: buttonsFor(c, true),
   };
 }

@@ -1,57 +1,72 @@
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, count, eq, isNotNull, isNull } from "drizzle-orm";
 import { db, one, schema } from "@/db";
-import { getSettings } from "@/lib/settings";
 
 export interface AssignmentContext {
   callId: number;
   /** The Cal.com host of this call's booking, if one is known. */
   bookingHostDesignerId: number | null;
-  /** Existing-client complaints go to the studio head, not into rotation. */
+  /** Existing-client complaints go to the studio head, not into the normal rotation. */
   escalate: boolean;
 }
 
-/** Return the designer id to assign, or null if nobody is available. */
+/** Return the designer id to give a call to, or null if nobody can take it. Must not change anything. */
 export type Assigner = (ctx: AssignmentContext) => Promise<number | null> | number | null;
 
-/**
- * Round-robin over active, non-escalation designers in rr_order. The pointer lives in settings and is
- * advanced with one atomic UPDATE, so two calls arriving at the same moment on different servers never get the same slot.
- */
-export const roundRobin: Assigner = async () => {
-  const designers = await db
+type Designer = typeof schema.designers.$inferSelect;
+
+/** People who can be given a call: active, and a designer (front desk officers assign calls, they do not receive them). */
+export async function eligibleDesigners(): Promise<Designer[]> {
+  return db
     .select()
     .from(schema.designers)
-    .where(eq(schema.designers.active, true))
+    .where(and(eq(schema.designers.active, true), eq(schema.designers.role, "designer")))
     .orderBy(asc(schema.designers.rrOrder), asc(schema.designers.id));
-  const pool = designers.filter((d) => !d.isEscalation);
-  if (pool.length === 0) return null;
-  await getSettings(); // makes sure the row exists
-  const [row] = await db
-    .update(schema.settings)
-    .set({ rrPointer: sql`(${schema.settings.rrPointer} + 1) % ${pool.length}` })
-    .where(eq(schema.settings.id, 1))
-    .returning({ pointer: schema.settings.rrPointer });
-  const before = (row.pointer - 1 + pool.length) % pool.length; // the slot this call takes
-  return pool[before].id;
-};
+}
 
-/** Default strategy: booking host, then escalation designer for complaints, then round-robin. */
-export const defaultAssigner: Assigner = async (ctx) => {
+/** How many calls each designer currently holds that they have not acknowledged yet. */
+export async function workloads(): Promise<Map<number, number>> {
+  const rows = await db
+    .select({ id: schema.calls.assignedDesignerId, n: count() })
+    .from(schema.calls)
+    .where(and(isNotNull(schema.calls.assignedDesignerId), isNull(schema.calls.acknowledgedAt)))
+    .groupBy(schema.calls.assignedDesignerId);
+  return new Map(rows.map((r) => [r.id!, Number(r.n)]));
+}
+
+/**
+ * Default rule, used for the front desk's pre-selected suggestion and for automatic assignment:
+ * the Cal.com host if there is one, the studio head for a complaint, otherwise the designer with the fewest
+ * unacknowledged calls (ties go to whoever comes first in the rotation order). It changes nothing, so asking
+ * for a suggestion costs nothing and two people asking at once get the same answer.
+ */
+export const workloadAssigner: Assigner = async (ctx) => {
   if (ctx.bookingHostDesignerId) return ctx.bookingHostDesignerId;
+  const all = await eligibleDesigners();
   if (ctx.escalate) {
-    const head = await one(db.select().from(schema.designers).where(eq(schema.designers.isEscalation, true)));
+    const head = all.find((d) => d.isEscalation);
     if (head) return head.id;
   }
-  return roundRobin(ctx);
+  const pool = all.filter((d) => !d.isEscalation);
+  if (pool.length === 0) return null;
+  const load = await workloads();
+  return pool.reduce((best, d) => ((load.get(d.id) ?? 0) < (load.get(best.id) ?? 0) ? d : best)).id;
 };
 
-let current: Assigner = defaultAssigner;
+let current: Assigner = workloadAssigner;
 
-/** Swap the assignment strategy (for example, by workload or by skill) without touching the pipeline. */
+/** Swap the rule (for example, by skill or by area) without touching the pipeline. */
 export function setAssigner(fn: Assigner) {
   current = fn;
 }
 
+export const defaultAssigner = workloadAssigner;
+
 export async function assignDesigner(ctx: AssignmentContext): Promise<number | null> {
   return current(ctx);
+}
+
+/** The designer to pre-select for a call in the front desk inbox. */
+export async function suggestDesignerFor(call: { id: number; flag: string; bookingId: string | null }): Promise<number | null> {
+  const booking = call.bookingId ? await one(db.select().from(schema.bookings).where(eq(schema.bookings.calcomUid, call.bookingId))) : undefined;
+  return assignDesigner({ callId: call.id, bookingHostDesignerId: booking?.hostDesignerId ?? null, escalate: call.flag === "existing_client" });
 }

@@ -24,7 +24,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     );
   }
   const me = await currentDesigner();
-  const designers = (await activeDesigners()).map((d) => ({ id: d.id, name: d.name }));
+  const designers = (await activeDesigners()).map((d) => ({ id: d.id, name: d.role === "front_desk" ? `${d.name} (front desk)` : d.name }));
   return (
     <html lang="en">
       <body>

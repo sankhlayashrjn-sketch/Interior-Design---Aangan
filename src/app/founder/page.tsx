@@ -59,10 +59,11 @@ export default async function FounderPage({ searchParams }: { searchParams: Prom
       </div>
 
       <section aria-label="Metrics">
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-5 border-y border-line py-5 sm:grid-cols-3 lg:grid-cols-5">
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-5 border-y border-line py-5 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-6">
           <Metric label="Calls today" value={String(m.callsToday)} sub={`${m.callsInRange} in the last ${rangeLabel}`} />
           <Metric label="Acknowledged within SLA" value={m.sla.pct === null ? "–" : `${m.sla.pct}%`} sub={m.sla.total ? `${m.sla.met} of ${m.sla.total} judged` : "nothing due yet"} />
           <Metric label="After-hours calls caught" value={String(m.afterHours.count)} sub={`${m.afterHours.acknowledged} acknowledged`} />
+          <Metric label="Assigned within target" value={m.assign.pct === null ? "–" : `${m.assign.pct}%`} sub={m.assign.total ? `${m.assign.met} of ${m.assign.total} judged · ${m.assign.waiting} waiting · ${m.assign.avgMinutes === null ? "no average yet" : `avg ${fmtMinutes(m.assign.avgMinutes)}`}${m.assign.auto ? ` · ${m.assign.auto} by the app` : ""}` : `${m.assign.waiting} waiting`} />
           <Metric label="Avg time to acknowledge" value={m.avgAckMinutes === null ? "–" : fmtMinutes(m.avgAckMinutes)} sub={m.ackCount ? `working time, ${m.ackCount} calls` : "no acknowledgements yet"} />
           <Metric label="Calls with a booked slot" value={String(m.booked)} />
         </dl>
@@ -164,7 +165,7 @@ export default async function FounderPage({ searchParams }: { searchParams: Prom
         </section>
 
         <aside className={detail ? "" : "hidden xl:block"} aria-label="Selected call">
-          {detail ? <CallDetail detail={detail} backHref={q({ call: "" })} now={now} /> : <p className="py-8 text-mute">Select a call to see the handoff note and why it was scored that way.</p>}
+          {detail ? <CallDetail detail={detail} now={now} /> : <p className="py-8 text-mute">Select a call to see the handoff note and why it was scored that way.</p>}
         </aside>
       </div>
     </div>

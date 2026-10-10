@@ -15,6 +15,13 @@
       "when": 1791606323361,
       "tag": "0001_useful_fenris",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791607818936,
+      "tag": "0002_opposite_garia",
+      "breakpoints": true
     }
   ]
 }
