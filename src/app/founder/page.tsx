@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PageBanner } from "@/components/memphis/PageBanner";
+import { PageBanner } from "@/components/neu/PageBanner";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { CallDetail } from "@/components/CallDetail";
 import { FlagChip } from "@/components/Chip";
@@ -51,7 +51,7 @@ export default async function FounderPage({ searchParams }: { searchParams: Prom
       <PageBanner title="Founder view" tone="blue" subtitle="How the studio is doing">
         <nav aria-label="Period" className="flex gap-3 text-small">
           {RANGES.map((r) => (
-            <Link key={r.key} href={q({ range: r.key, call: "" })} aria-current={r.key === range ? "true" : undefined} className={`rounded-full border-2 border-ink px-4 py-1.5 font-bold text-ink no-underline ${r.key === range ? "bg-yellow" : "bg-white"}`}>
+            <Link key={r.key} href={q({ range: r.key, call: "" })} aria-current={r.key === range ? "true" : undefined} className={`rounded-full px-5 py-2 font-semibold text-ink no-underline ${r.key === range ? "n-inset-sm" : "n-card-sm"}`}>
               {r.label}
             </Link>
           ))}

@@ -1,10 +1,10 @@
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { CallDetail } from "@/components/CallDetail";
 import { FilterBar, type Filters } from "@/components/FilterBar";
-import { CallTable } from "@/components/memphis/CallTable";
-import { PageBanner } from "@/components/memphis/PageBanner";
-import { StatStrip } from "@/components/memphis/StatStrip";
-import { TabsNav } from "@/components/memphis/TabsNav";
+import { CallTable } from "@/components/neu/CallTable";
+import { PageBanner } from "@/components/neu/PageBanner";
+import { StatStrip } from "@/components/neu/StatStrip";
+import { TabsNav } from "@/components/neu/TabsNav";
 import { eligibleDesigners, suggestDesignerFor, workloads } from "@/lib/assignment";
 import { activeDesigners, countsForFrontDesk, getDetail, listForFrontDesk, todayForFrontDesk, type FrontDeskTab, type SortKey } from "@/lib/calls";
 import { fmtDue } from "@/lib/format";

@@ -5,8 +5,8 @@ import "@fontsource/inter/700.css";
 import "@fontsource/inter/800.css";
 import "./globals.css";
 import { DesignerSelect } from "@/components/DesignerSelect";
-import { AppHeader } from "@/components/memphis/AppHeader";
-import { MemphisProvider } from "@/components/memphis/Provider";
+import { AppHeader } from "@/components/neu/AppHeader";
+import { NeuProvider } from "@/components/neu/Provider";
 import { activeDesigners } from "@/lib/calls";
 import { logoutAction } from "@/app/login/actions";
 import { authMode } from "@/lib/auth";
@@ -21,9 +21,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     return (
       <html lang="en">
         <body>
-          <MemphisProvider>
+          <NeuProvider>
             <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">{children}</main>
-          </MemphisProvider>
+          </NeuProvider>
         </body>
       </html>
     );
@@ -33,7 +33,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   return (
     <html lang="en">
       <body>
-        <MemphisProvider>
+        <NeuProvider>
           <AppHeader
             right={
               <>
@@ -49,7 +49,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             }
           />
           <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">{children}</main>
-        </MemphisProvider>
+        </NeuProvider>
       </body>
     </html>
   );

@@ -4,7 +4,6 @@ import { Menu } from "antd";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { Shapes } from "./Shapes";
 
 const LINKS = [
   { key: "/", href: "/", label: "Front desk" },
@@ -14,25 +13,29 @@ const LINKS = [
   { key: "/settings", href: "/settings", label: "Settings" },
 ];
 
-/** The banner: yellow, boxed, with the geometric shapes, the five sections as pills, and who is viewing on the right. */
+/** The top bar: one raised slab with the brand, the five sections as pills (the current one pressed in), and who is viewing. */
 export function AppHeader({ right }: { right: ReactNode }) {
   const path = usePathname();
   const selected = path === "/" || path.startsWith("/call/") ? "/" : (LINKS.find((l) => l.href !== "/" && path.startsWith(l.href))?.key ?? "");
   return (
-    <header className="m-banner mx-auto mt-5 max-w-7xl px-5 py-4" style={{ width: "calc(100% - 32px)" }}>
-      <Shapes density="light" />
-      <div className="relative flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-        <div>
-          <p className="text-[22px] font-extrabold leading-tight tracking-tight">Aangan Studios</p>
-          <p className="text-small font-semibold">Inquiry Tracker</p>
+    <header className="n-card mx-auto mt-6 max-w-7xl px-6 py-4" style={{ width: "calc(100% - 32px)" }}>
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <div className="flex items-center gap-3">
+          <span className="n-inset-sm flex h-11 w-11 items-center justify-center rounded-full" aria-hidden="true">
+            <span className="block h-4 w-4 rounded-full bg-accent" />
+          </span>
+          <div>
+            <p className="text-[19px] font-bold leading-tight tracking-tight">Aangan Studios</p>
+            <p className="text-small text-mute">Inquiry Tracker</p>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3">{right}</div>
+        <div className="flex flex-wrap items-center gap-4">{right}</div>
       </div>
       <Menu
         mode="horizontal"
         selectedKeys={[selected]}
         disabledOverflow
-        style={{ background: "transparent", borderBottom: 0, marginTop: 10, fontWeight: 700, lineHeight: "38px" }}
+        style={{ background: "transparent", borderBottom: 0, marginTop: 14, fontWeight: 600, lineHeight: "40px" }}
         items={LINKS.map((l) => ({ key: l.key, label: <Link href={l.href}>{l.label}</Link> }))}
       />
     </header>

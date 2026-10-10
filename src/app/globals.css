@@ -1,21 +1,20 @@
 @import "tailwindcss";
 
-/* Memphis design: loud flat colour, black outlines, hard offset shadows, geometric shapes, dotted backgrounds.
-   The token names stay the same as before so every page that uses them picks the new look up. */
+/* Neumorphism ("soft UI"): one background colour, and every surface is either pushed out of it (raised) or pressed
+   into it (inset) with a pair of soft shadows, a light one top-left and a dark one bottom-right.
+   Text stays dark and strong, because this style is easy to make unreadable. */
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
 
-  --color-paper: #fff6df;
-  --color-ink: #111111;
-  --color-mute: #3d3d57;
-  --color-line: #111111;
-  /* Primary action and anything overdue. White on it is 5.5:1. */
-  --color-accent: #d6246e;
-  --color-pink: #ff5ca8;
-  --color-yellow: #ffd60a;
-  --color-teal: #19c9b0;
-  --color-blue: #3a86ff;
-  --color-purple: #7b2ff7;
+  --color-paper: #e6eaf1;
+  --color-ink: #25304a;
+  --color-mute: #56617a;
+  --color-line: rgba(37, 48, 74, 0.14);
+  /* The one action colour. White on it is 5.7:1. */
+  --color-accent: #4f5bd5;
+  --color-danger: #c23556;
+  --color-good: #167a64;
+  --color-warn: #a35d00;
 
   --text-small: 13px;
   --text-small--line-height: 1.5;
@@ -25,15 +24,22 @@
   --text-title--line-height: 1.2;
 }
 
+:root {
+  --n-bg: #e6eaf1;
+  --n-light: #ffffff;
+  --n-dark: #b9c1d1;
+  --n-raised: 9px 9px 18px var(--n-dark), -9px -9px 18px var(--n-light);
+  --n-raised-sm: 5px 5px 10px var(--n-dark), -5px -5px 10px var(--n-light);
+  --n-inset: inset 6px 6px 12px var(--n-dark), inset -6px -6px 12px var(--n-light);
+  --n-inset-sm: inset 3px 3px 6px var(--n-dark), inset -3px -3px 6px var(--n-light);
+}
+
 html {
-  background: var(--color-paper);
+  background: var(--n-bg);
 }
 
 body {
-  background-color: var(--color-paper);
-  /* A grid of small dots, the Memphis "confetti" texture. */
-  background-image: radial-gradient(rgba(17, 17, 17, 0.14) 1.6px, transparent 1.6px);
-  background-size: 22px 22px;
+  background: var(--n-bg);
   color: var(--color-ink);
   font-family: var(--font-sans);
   font-size: 15px;
@@ -44,56 +50,217 @@ body {
 h1,
 h2,
 h3 {
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  font-weight: 700;
+  letter-spacing: -0.015em;
 }
 
 :focus-visible {
-  outline: 3px solid var(--color-ink);
-  outline-offset: 2px;
+  outline: 3px solid var(--color-accent);
+  outline-offset: 3px;
 }
 
-/* A surface in the Memphis style: white, thick black outline, hard colour-offset shadow. */
-.m-card {
-  background: #fff;
-  border: 2px solid var(--color-ink);
-  border-radius: 14px;
-  box-shadow: 5px 5px 0 var(--color-ink);
+/* Surfaces */
+.n-card {
+  background: var(--n-bg);
+  border-radius: 22px;
+  box-shadow: var(--n-raised);
 }
-
-.m-banner {
-  position: relative;
-  background: var(--color-yellow);
-  border: 2px solid var(--color-ink);
+.n-card-sm {
+  background: var(--n-bg);
+  border-radius: 16px;
+  box-shadow: var(--n-raised-sm);
+}
+.n-inset {
+  background: var(--n-bg);
   border-radius: 18px;
-  box-shadow: 6px 6px 0 var(--color-ink);
+  box-shadow: var(--n-inset);
+}
+.n-inset-sm {
+  background: var(--n-bg);
+  border-radius: 14px;
+  box-shadow: var(--n-inset-sm);
+}
+
+/* ---- Ant Design, softened ---- */
+.ant-btn {
+  border: none !important;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+.ant-btn-default {
+  background: var(--n-bg) !important;
+  box-shadow: var(--n-raised-sm) !important;
+  color: var(--color-ink) !important;
+}
+.ant-btn-primary {
+  box-shadow: 5px 5px 10px var(--n-dark), -5px -5px 10px var(--n-light) !important;
+}
+.ant-btn:active:not(:disabled) {
+  box-shadow: var(--n-inset-sm) !important;
+  transform: translateY(1px);
+}
+.ant-btn:disabled,
+.ant-btn-disabled {
+  box-shadow: none !important;
+  opacity: 0.55;
+}
+
+/* Fields are pressed into the surface. */
+.ant-input-outlined,
+.ant-input-affix-wrapper,
+.ant-input-outlined.ant-input-textarea,
+.ant-select-outlined:not(.ant-select-customize-input),
+.ant-select-outlined {
+  background: var(--n-bg) !important;
+  border: none !important;
+  box-shadow: var(--n-inset-sm) !important;
+  border-radius: 14px !important;
+}
+.ant-input-search .ant-input-search-button {
+  box-shadow: var(--n-raised-sm) !important;
+  border-radius: 14px !important;
+}
+.ant-select-outlined .ant-select-selector,
+.ant-select-outlined .ant-select-content {
+  background: transparent !important;
+}
+.ant-checkbox {
+  border-radius: 7px;
+  box-shadow: var(--n-inset-sm);
+  background: var(--n-bg);
+}
+.ant-checkbox.ant-checkbox-checked {
+  background: var(--color-accent);
+  box-shadow: 3px 3px 6px var(--n-dark), -3px -3px 6px var(--n-light);
+}
+
+/* The call table sits in a raised card; the open call is pressed in. */
+.ant-table-wrapper .ant-table,
+.ant-table-wrapper .ant-table-container,
+.ant-table-wrapper table {
+  background: transparent !important;
+}
+.ant-table-wrapper .ant-table-thead > tr > th {
+  background: transparent !important;
+  color: var(--color-mute);
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--color-line) !important;
+}
+.ant-table-wrapper .ant-table-thead > tr > th::before {
+  display: none !important;
+}
+.ant-table-wrapper .ant-table-tbody > tr > td {
+  border-bottom: 1px solid var(--color-line) !important;
+  background: transparent !important;
+}
+.ant-table-wrapper .ant-table-tbody > tr.m-row:hover > td {
+  background: rgba(255, 255, 255, 0.45) !important;
+}
+.ant-table-wrapper .ant-table-tbody > tr.m-row-open > td {
+  background: rgba(79, 91, 213, 0.08) !important;
+  font-weight: 500;
+}
+.ant-table-wrapper .ant-table-tbody > tr.ant-table-expanded-row > td {
+  padding: 14px !important;
+  background: transparent !important;
+}
+
+/* Details: every drop-down is its own raised card. */
+.n-collapse.ant-collapse {
+  background: transparent !important;
+  border: none !important;
+}
+.n-collapse .ant-collapse-item {
+  background: var(--n-bg) !important;
+  border: none !important;
+  border-radius: 18px !important;
+  box-shadow: var(--n-raised-sm);
+  margin-bottom: 14px;
   overflow: hidden;
 }
+.n-collapse .ant-collapse-header {
+  font-size: 15px;
+}
+.n-collapse .ant-collapse-panel,
+.n-collapse .ant-collapse-body {
+  background: transparent !important;
+  border: none !important;
+}
+.n-collapse .ant-collapse-body {
+  padding-top: 4px !important;
+}
 
-/* Plain inputs on the older pages (settings, simulate) get a chunky outline; Ant Design controls style themselves. */
+/* Segmented control (the tabs): a pressed-in track with a raised thumb. */
+.n-tabs.ant-segmented {
+  background: var(--n-bg) !important;
+  box-shadow: var(--n-inset-sm);
+  border-radius: 18px;
+  padding: 5px;
+}
+.n-tabs .ant-segmented-item-selected,
+.n-tabs .ant-segmented-thumb {
+  background: var(--n-bg) !important;
+  box-shadow: var(--n-raised-sm) !important;
+  border-radius: 14px;
+}
+.n-tabs .ant-segmented-item {
+  border-radius: 14px;
+}
+
+.ant-menu-horizontal > .ant-menu-item,
+.ant-menu-horizontal > .ant-menu-item a {
+  color: var(--color-ink) !important;
+}
+.ant-menu-horizontal > .ant-menu-item-selected {
+  background: var(--n-bg) !important;
+  box-shadow: var(--n-inset-sm);
+}
+.ant-menu-horizontal > .ant-menu-item:hover:not(.ant-menu-item-selected) {
+  box-shadow: var(--n-raised-sm);
+  background: var(--n-bg) !important;
+}
+.ant-menu-horizontal > .ant-menu-item::after {
+  display: none !important;
+}
+
+/* Older pages (settings, simulate, login) use plain controls: soften them too. */
 input.border-line,
 select.border-line,
 textarea.border-line {
-  border-width: 2px;
-  border-radius: 10px;
+  border: none;
+  background: var(--n-bg);
+  box-shadow: var(--n-inset-sm);
+  border-radius: 14px;
+}
+button.border-ink,
+a.border-ink {
+  border-color: transparent;
+  background: var(--n-bg);
+  box-shadow: var(--n-raised-sm);
+  border-radius: 14px;
+}
+button.bg-accent {
+  border-radius: 14px;
+  box-shadow: 5px 5px 10px var(--n-dark), -5px -5px 10px var(--n-light);
+}
+button:active:not(:disabled).border-ink,
+button:active:not(:disabled).bg-accent {
+  box-shadow: var(--n-inset-sm);
+}
+table {
+  border-color: var(--color-line);
+}
+.border-t.border-line,
+.border-b.border-line,
+.border-y.border-line,
+li.border-line {
+  border-color: var(--color-line);
 }
 
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;
   }
-}
-
-/* Ant Design table, Memphis style: outlined rows, the open call stands out in pink. */
-.m-row-open > td {
-  background: #ffe1ef !important;
-}
-.ant-table-wrapper .ant-table-thead > tr > th {
-  font-weight: 800;
-  border-bottom: 2px solid #111;
-}
-.ant-table-wrapper .ant-table-tbody > tr.ant-table-expanded-row > td {
-  background: #fff6df;
-  border-top: 2px solid #111;
-  border-bottom: 2px solid #111;
 }

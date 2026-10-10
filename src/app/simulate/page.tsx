@@ -1,5 +1,5 @@
 import { DateTime } from "luxon";
-import { PageBanner } from "@/components/memphis/PageBanner";
+import { PageBanner } from "@/components/neu/PageBanner";
 import { SimulateForm } from "@/components/SimulateForm";
 import samples from "@/seed/sample-calls.json";
 import { SAMPLE_TITLES } from "@/seed/sample-titles";

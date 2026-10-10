@@ -6,7 +6,7 @@ import { AssignForm, type AssignOption } from "@/components/AssignForm";
 import { FlagChip, StatusChip } from "@/components/Chip";
 import { NoteForm } from "@/components/NoteForm";
 import { OverrideForm } from "@/components/OverrideForm";
-import { M } from "@/components/memphis/theme";
+import { N } from "@/components/neu/theme";
 import type { getDetail } from "@/lib/calls";
 import { fmtDateTime, fmtDue, PROPERTY_LABEL } from "@/lib/format";
 import { splitTurns } from "@/lib/guardrail";
@@ -19,7 +19,7 @@ export interface AssignPanel {
   suggestedId: number | null;
 }
 
-const dim = { color: "#3d3d57" } as const;
+const dim = { color: N.mute } as const;
 
 /**
  * One call in full, as a stack of drop-downs: handoff note, transcript, booking, score, notes, timeline, override.
@@ -65,11 +65,10 @@ export function CallDetail({ detail, now = new Date(), assign }: { detail: Detai
             <ol className="space-y-2">
               {turns.map((t, i) => (
                 <li key={i} className={`flex ${t.speaker === "agent" ? "justify-start" : "justify-end"}`}>
-                  <div
-                    className="max-w-[85%] rounded-[14px] border-2 border-ink px-3 py-2"
-                    style={{ background: t.speaker === "agent" ? M.yellow : M.teal, boxShadow: `3px 3px 0 ${M.ink}` }}
-                  >
-                    <div className="text-[11px] font-extrabold uppercase tracking-wide">{t.speaker === "agent" ? "Agent" : "Caller"}</div>
+                  <div className={`max-w-[85%] px-4 py-2.5 ${t.speaker === "agent" ? "n-card-sm" : "n-inset-sm"}`}>
+                    <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: t.speaker === "agent" ? N.accent : N.good }}>
+                      {t.speaker === "agent" ? "Agent" : "Caller"}
+                    </div>
                     <div>{t.text}</div>
                   </div>
                 </li>
@@ -144,7 +143,7 @@ export function CallDetail({ detail, now = new Date(), assign }: { detail: Detai
           ) : (
             <ul className="space-y-3">
               {notes.map((n) => (
-                <li key={n.id} className="border-l-4 border-purple pl-3">
+                <li key={n.id} className="border-l-4 border-accent pl-3">
                   <p className="whitespace-pre-line">{n.body}</p>
                   <p className="text-small" style={dim}>
                     {n.byName ?? "Someone"} · {fmtDateTime(n.createdAt)}
@@ -164,7 +163,9 @@ export function CallDetail({ detail, now = new Date(), assign }: { detail: Detai
         <ol className="space-y-3">
           {timeline.map((e, i) => (
             <li key={i} className="flex items-start gap-3">
-              <span className="mt-1.5 inline-block h-3.5 w-3.5 shrink-0 rounded-full border-2 border-ink" style={{ background: [M.pink, M.yellow, M.teal, M.blue][i % 4] }} />
+              <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full" style={{ boxShadow: "inset 2px 2px 4px #b9c1d1, inset -2px -2px 4px #ffffff" }}>
+                <span className="block h-2 w-2 rounded-full" style={{ background: [N.accent, N.warn, N.good, N.info][i % 4] }} />
+              </span>
               <span>
                 <span className="text-small font-semibold" style={dim}>
                   {fmtDateTime(e.at).replace(" IST", "")}
@@ -208,7 +209,7 @@ export function CallDetail({ detail, now = new Date(), assign }: { detail: Detai
     <article aria-label="Call detail" className="space-y-4 py-2">
       <header>
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-[24px] font-extrabold leading-tight">{call.callerName ?? call.callerPhone ?? "Unknown caller"}</h2>
+          <h2 className="text-[24px] font-bold leading-tight">{call.callerName ?? call.callerPhone ?? "Unknown caller"}</h2>
           <StatusChip status={call.status} />
           <FlagChip flag={call.flag} />
         </div>
@@ -228,31 +229,31 @@ export function CallDetail({ detail, now = new Date(), assign }: { detail: Detai
       </header>
 
       {canAssign && (
-        <div className="rounded-[14px] border-2 border-ink p-4" style={{ background: M.yellow, boxShadow: `4px 4px 0 ${M.ink}` }}>
+        <div className="n-card-sm p-5">
           <AssignForm callId={call.id} designers={assign!.designers} suggestedId={assign!.suggestedId} currentId={call.assignedDesignerId} />
         </div>
       )}
 
       {canAcknowledge && (
-        <div className="flex flex-wrap items-center gap-4 rounded-[14px] border-2 border-ink p-4" style={{ background: call.acknowledgedAt ? M.teal : M.yellow, boxShadow: `4px 4px 0 ${M.ink}` }}>
+        <div className="n-card-sm flex flex-wrap items-center gap-4 p-5">
           {call.acknowledgedAt ? (
-            <p className="font-bold">
+            <p className="font-bold" style={{ color: N.good }}>
               Acknowledged by {acknowledgedByName} · {due.text.replace("Acknowledged ", "")}
             </p>
           ) : (
             <>
               <AcknowledgeButton callId={call.id} />
-              <p className={due.state === "overdue" ? "font-extrabold text-accent" : "font-semibold"}>{due.text}</p>
+              <p className={due.state === "overdue" ? "font-bold text-danger" : "font-semibold"}>{due.text}</p>
             </>
           )}
         </div>
       )}
 
       {call.guardrailHits && call.guardrailHits.length > 0 && (
-        <Alert type="warning" showIcon={false} message={`Price guardrail: ${call.guardrailHits.join("; ")}. Do not quote prices; the designer gives a quote at the consultation.`} style={{ border: `2px solid ${M.ink}` }} />
+        <Alert type="warning" showIcon={false} message={`Price guardrail: ${call.guardrailHits.join("; ")}. Do not quote prices; the designer gives a quote at the consultation.`} className="n-inset-sm" />
       )}
 
-      <Collapse items={items} defaultActiveKey={["handoff"]} style={{ background: "#fff", border: `2px solid ${M.ink}` }} />
+      <Collapse className="n-collapse" items={items} defaultActiveKey={["handoff"]} bordered={false} expandIconPlacement="end" />
     </article>
   );
 }

@@ -2,11 +2,10 @@ import Link from "next/link";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { CallDetail } from "@/components/CallDetail";
 import { FilterBar, type Filters } from "@/components/FilterBar";
-import { CallTable } from "@/components/memphis/CallTable";
-import { PageBanner } from "@/components/memphis/PageBanner";
-import { StatStrip } from "@/components/memphis/StatStrip";
-import { TabsNav } from "@/components/memphis/TabsNav";
-import { M } from "@/components/memphis/theme";
+import { CallTable } from "@/components/neu/CallTable";
+import { PageBanner } from "@/components/neu/PageBanner";
+import { StatStrip } from "@/components/neu/StatStrip";
+import { TabsNav } from "@/components/neu/TabsNav";
 import { activeDesigners, countsForDesigner, getDetail, listForDesigner, todayForDesigner, type SortKey, type Tab } from "@/lib/calls";
 import { fmtDue } from "@/lib/format";
 import { toRow } from "@/lib/rows";
@@ -79,7 +78,7 @@ export default async function Designers({ searchParams }: { searchParams: Promis
       <AutoRefresh />
       <PageBanner title={whoName} tone="teal" subtitle={`${counts.pending} waiting for acknowledgement`} />
 
-      <nav aria-label="Designer" className="mb-6 flex flex-wrap gap-2">
+      <nav aria-label="Designer" className="mb-7 flex flex-wrap gap-3">
         {[{ id: "all" as const, name: "Everyone" }, ...designers].map((d) => {
           const on = String(d.id) === whoParam;
           return (
@@ -87,8 +86,7 @@ export default async function Designers({ searchParams }: { searchParams: Promis
               key={d.id}
               href={`/designers?who=${d.id}&tab=${tab}`}
               aria-current={on ? "true" : undefined}
-              className="rounded-full border-2 border-ink px-4 py-1.5 text-small font-bold text-ink no-underline"
-              style={{ background: on ? M.pink : "#fff", boxShadow: on ? `3px 3px 0 ${M.ink}` : "none" }}
+              className={`rounded-full px-5 py-2 text-small font-semibold text-ink no-underline ${on ? "n-inset-sm" : "n-card-sm"}`}
             >
               {d.name}
             </Link>

@@ -35,19 +35,19 @@ export function FilterBar({ tab, filters, basePath = "/", hidden = {} }: { tab: 
   const clear = { q: "", status: "", sort: "" as const, booked: false, overdue: false, afterHours: false };
 
   return (
-    <div role="search" aria-label="Search and filter calls" className="m-card mb-4 flex flex-wrap items-center gap-x-4 gap-y-3 p-4">
+    <div role="search" aria-label="Search and filter calls" className="n-card mb-5 flex flex-wrap items-center gap-x-5 gap-y-4 px-6 py-5">
       <Input.Search
         placeholder="Search name, phone, area, notes"
         allowClear
         defaultValue={f.q}
         onSearch={(q) => go({ ...f, q })}
-        style={{ width: 280 }}
+        style={{ width: 290 }}
         aria-label="Search name, phone, area or notes"
       />
       <Select
         value={f.status}
         onChange={(status) => go({ ...f, status })}
-        style={{ width: 170 }}
+        style={{ width: 175 }}
         aria-label="Status"
         options={[
           { value: "", label: "Any status" },
@@ -59,7 +59,7 @@ export function FilterBar({ tab, filters, basePath = "/", hidden = {} }: { tab: 
       <Select
         value={f.sort}
         onChange={(sort) => go({ ...f, sort: sort as SortKey | "" })}
-        style={{ width: 170 }}
+        style={{ width: 175 }}
         aria-label="Sort by"
         options={[
           { value: "", label: "Default order" },
