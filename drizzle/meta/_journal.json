@@ -29,6 +29,13 @@
       "when": 1791627086218,
       "tag": "0003_omniscient_doctor_spectrum",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791627903942,
+      "tag": "0004_mean_maginty",
+      "breakpoints": true
     }
   ]
 }

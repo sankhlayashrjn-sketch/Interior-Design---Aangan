@@ -67,6 +67,8 @@ export const calls = pgTable(
     callerPhone: text("caller_phone"),
     /** Given on the call (the voice agent asks for it to book). Optional. */
     callerEmail: text("caller_email"),
+    /** The day, time and email the caller gave for a consultation. The booking is made once a designer is assigned. */
+    bookingWish: jsonb("booking_wish"),
     startedAt: ts("started_at").notNull(),
     durationSec: integer("duration_sec").notNull().default(0),
     transcript: text("transcript").notNull().default(""),

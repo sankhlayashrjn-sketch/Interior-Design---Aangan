@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { audit } from "@/lib/audit";
 import { env } from "@/lib/env";
+import { on } from "@/lib/hooks";
 import { IST } from "@/lib/working-hours";
 
 /**
@@ -74,6 +75,38 @@ export function wantedStart(wish: BookingWish, calledAt: Date): DateTime | null 
   return day && time ? day.set(time) : null;
 }
 
+/** What the caller asked for, saved on the call until a designer is assigned. */
+export interface StoredWish {
+  name: string | null;
+  email: string;
+  /** ISO time the caller asked for (IST). */
+  wantedAt: string;
+  /** The Cal.com booking this app made for the call, so it can be replaced if the call is given to someone else. */
+  appBookingUid?: string;
+  appBookingDesignerId?: number;
+}
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Called when the voice call's details arrive. Saves the caller's email and preferred time on the call if they gave
+ * both. The booking itself waits until a designer is assigned, so the invite can name that designer.
+ */
+export async function rememberBookingWish(callId: number, entities: unknown): Promise<boolean> {
+  const call = (await db.select().from(schema.calls).where(eq(schema.calls.id, callId)))[0];
+  if (!call) return false;
+  const wish = wishFromEntities(entities);
+  const wanted = wantedStart(wish, call.startedAt);
+  if (!wish.email || !EMAIL.test(wish.email) || !wanted) {
+    await audit("booking.wish", { saved: false, reason: !wish.email || !EMAIL.test(wish.email) ? "no usable email" : "no usable day and time" }, callId);
+    return false;
+  }
+  const stored: StoredWish = { name: wish.name, email: wish.email, wantedAt: wanted.toISO()! };
+  await db.update(schema.calls).set({ bookingWish: stored }).where(eq(schema.calls.id, callId));
+  await audit("booking.wish", { saved: true, wantedAt: stored.wantedAt }, callId);
+  return true;
+}
+
 export type BookOutcome = { state: "booked"; uid: string; start: string } | { state: "skipped" | "failed"; reason: string };
 
 const api = (path: string, init: RequestInit = {}, version = "2024-08-13") =>
@@ -83,8 +116,12 @@ const api = (path: string, init: RequestInit = {}, version = "2024-08-13") =>
     signal: AbortSignal.timeout(30_000),
   });
 
-/** Book the free slot nearest to (and not before) what the caller asked for. */
-export async function bookAfterCall(callId: number, entities: unknown, now: Date = new Date()): Promise<BookOutcome> {
+/**
+ * Book the call's consultation once a designer has it. The Cal.com invite is titled with the designer's name. The nearest
+ * free slot at or after what the caller asked for (and not in the past) is used. If this app already booked one for
+ * a different designer, that booking is cancelled and replaced. A booking made by anyone else is never touched.
+ */
+export async function bookAfterCall(callId: number, now: Date = new Date()): Promise<BookOutcome> {
   const skip = async (reason: string, state: "skipped" | "failed" = "skipped"): Promise<BookOutcome> => {
     await audit("booking.auto", { state, reason }, callId);
     return { state, reason };
@@ -93,16 +130,27 @@ export async function bookAfterCall(callId: number, entities: unknown, now: Date
 
   const call = (await db.select().from(schema.calls).where(eq(schema.calls.id, callId)))[0];
   if (!call) return { state: "skipped", reason: "no such call" };
-  if (call.bookingId && call.bookingStatus !== "cancelled") return skip("already has a booking");
+  const wish = call.bookingWish as StoredWish | null;
+  if (!wish) return { state: "skipped", reason: "the caller gave no email and time" };
+  if (!call.assignedDesignerId) return { state: "skipped", reason: "not assigned yet" };
   if (call.status === "disqualified" || call.status === "yet_to_be_processed") return skip(`status is ${call.status}`);
 
-  const wish = wishFromEntities(entities);
-  if (!wish.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(wish.email)) return skip("no usable email");
-  const wanted = wantedStart(wish, call.startedAt);
-  if (!wanted) return skip("no usable day and time");
+  const designer = (await db.select().from(schema.designers).where(eq(schema.designers.id, call.assignedDesignerId)))[0];
+  if (!designer) return skip("designer not found");
+
+  const active = !!call.bookingId && call.bookingStatus !== "cancelled";
+  const ours = !!wish.appBookingUid && wish.appBookingUid === call.bookingId;
+  if (active && !ours) return skip("already has a booking made elsewhere");
+  if (active && ours && wish.appBookingDesignerId === designer.id) return skip("already booked for this designer");
 
   try {
-    const from = DateTime.max(wanted, DateTime.fromJSDate(now, { zone: IST }).plus({ hours: 1 }));
+    if (active && ours) {
+      const c = await api(`/bookings/${wish.appBookingUid}/cancel`, { method: "POST", body: JSON.stringify({ cancellationReason: "The call was given to another designer" }) });
+      if (!c.ok) return skip(`could not replace the earlier booking (Cal.com ${c.status})`, "failed");
+    }
+
+    const asked = DateTime.fromISO(wish.wantedAt, { zone: IST });
+    const from = DateTime.max(asked, DateTime.fromJSDate(now, { zone: IST }).plus({ hours: 1 }));
     const res = await api(`/slots?eventTypeId=${env.CALCOM_EVENT_TYPE_ID}&start=${from.toISODate()}&end=${from.plus({ days: 7 }).toISODate()}&timeZone=Asia/Kolkata`, {}, "2024-09-04");
     const body = (await res.json()) as { data?: Record<string, { start: string }[]> };
     const slot = Object.values(body.data ?? {})
@@ -114,12 +162,24 @@ export async function bookAfterCall(callId: number, entities: unknown, now: Date
 
     const attendee: Record<string, string> = { name: wish.name ?? call.callerName ?? "Caller", email: wish.email, timeZone: "Asia/Kolkata" };
     if (call.callerPhone && /^\+\d{8,15}$/.test(call.callerPhone)) attendee.phoneNumber = call.callerPhone;
-    const book = await api("/bookings", { method: "POST", body: JSON.stringify({ start: slot.toUTC().toISO(), eventTypeId: Number(env.CALCOM_EVENT_TYPE_ID), attendee }) });
+    const book = await api("/bookings", {
+      method: "POST",
+      body: JSON.stringify({ start: slot.toUTC().toISO(), eventTypeId: Number(env.CALCOM_EVENT_TYPE_ID), attendee, bookingFieldsResponses: { designer: designer.name } }),
+    });
     const out = (await book.json()) as { data?: { uid?: string }; error?: { message?: string } };
     if (!book.ok || !out.data?.uid) return skip(`Cal.com refused: ${out.error?.message ?? book.status}`, "failed");
-    await audit("booking.auto", { state: "booked", uid: out.data.uid, start: slot.toISO(), asked: wanted.toISO() }, callId);
+
+    await db.update(schema.calls).set({ bookingWish: { ...wish, appBookingUid: out.data.uid, appBookingDesignerId: designer.id } satisfies StoredWish }).where(eq(schema.calls.id, callId));
+    await audit("booking.auto", { state: "booked", uid: out.data.uid, start: slot.toISO(), asked: wish.wantedAt, designer: designer.name }, callId);
     return { state: "booked", uid: out.data.uid, start: slot.toISO()! };
   } catch (e) {
     return skip(e instanceof Error ? e.message : String(e), "failed");
   }
+}
+
+/** Book (or re-book) whenever a call is given to a designer. Registered once, from runtime.ts. */
+export function registerBookingHandlers() {
+  on("call.assigned", async ({ callId }) => {
+    await bookAfterCall(callId);
+  });
 }

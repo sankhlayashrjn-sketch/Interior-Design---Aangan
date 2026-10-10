@@ -1,10 +1,13 @@
+import { eq } from "drizzle-orm";
 import { DateTime } from "luxon";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db, schema } from "@/db";
+import { assignCall } from "@/lib/calls";
 import { env } from "@/lib/env";
 import { ingestCall } from "@/lib/ingest";
-import { bookAfterCall, resolveDay, resolveTime, wantedStart, wishFromEntities } from "@/lib/voice/book-after-call";
-import { payloadFor, resetDb } from "./helpers";
+import { saveSettings } from "@/lib/settings";
+import { bookAfterCall, rememberBookingWish, resolveDay, resolveTime, wantedStart, wishFromEntities } from "@/lib/voice/book-after-call";
+import { callById, payloadFor, resetDb } from "./helpers";
 
 const IST = "Asia/Kolkata";
 const sat = DateTime.fromISO("2026-10-10T13:00", { zone: IST }); // Saturday
@@ -37,22 +40,32 @@ describe("reading what the caller asked for", () => {
   });
 });
 
-describe("booking after the call", () => {
+describe("booking once a designer is assigned", () => {
   const entities = { customer_name: "Priya", customer_email: "priya@example.com", preferred_day: "Monday", preferred_time_24h: "11:00" };
-  let booked: { start: string; attendee: Record<string, string> } | null;
+  const ISHA = 1; // created below; any number works as "assigned by"
+  let bookings: { start: string; attendee: Record<string, string>; designer: string }[];
+  let cancelled: string[];
+  let n: number;
 
   function stubCal(slots: string[], refuse = false) {
-    booked = null;
+    bookings = [];
+    cancelled = [];
+    n = 0;
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init?: RequestInit) => {
         const u = String(url);
         if (u.includes("/slots")) return new Response(JSON.stringify({ data: { "2026-10-12": slots.map((start) => ({ start })) } }), { status: 200 });
-        if (u.includes("/bookings")) {
+        const c = /\/bookings\/([^/]+)\/cancel/.exec(u);
+        if (c) {
+          cancelled.push(c[1]);
+          return new Response("{}", { status: 200 });
+        }
+        if (u.endsWith("/bookings")) {
           if (refuse) return new Response(JSON.stringify({ error: { message: "slot taken" } }), { status: 400 });
           const b = JSON.parse(String(init?.body));
-          booked = { start: b.start, attendee: b.attendee };
-          return new Response(JSON.stringify({ data: { uid: "uid-1" } }), { status: 201 });
+          bookings.push({ start: b.start, attendee: b.attendee, designer: b.bookingFieldsResponses?.designer });
+          return new Response(JSON.stringify({ data: { uid: `uid-${++n}` } }), { status: 201 });
         }
         return new Response("{}", { status: 404 });
       }),
@@ -66,6 +79,8 @@ describe("booking after the call", () => {
 
   beforeEach(async () => {
     await resetDb();
+    await saveSettings({ assignmentMode: "manual" });
+    await db.insert(schema.designers).values({ name: "Isha", role: "front_desk", rrOrder: 50 });
     env.CALCOM_MODE = "live";
     env.CALCOM_API_KEY = "k";
     env.CALCOM_EVENT_TYPE_ID = "42";
@@ -77,41 +92,86 @@ describe("booking after the call", () => {
     env.CALCOM_EVENT_TYPE_ID = "";
   });
 
-  it("books the free slot nearest to the requested time, with name, email and caller ID", async () => {
+  const flush = () => new Promise((r) => setTimeout(r, 50)); // the booking runs from the call.assigned event
+
+  it("nothing is booked while the call is unassigned; assigning books it, with the designer's name on the invite", async () => {
     stubCal(["2026-10-12T10:00:00.000+05:30", "2026-10-12T11:30:00.000+05:30", "2026-10-12T12:00:00.000+05:30"]);
     const call = await aCall();
-    const r = await bookAfterCall(call.id, entities, sat.toJSDate());
-    expect(r).toMatchObject({ state: "booked", uid: "uid-1" });
-    expect(booked!.start).toBe("2026-10-12T06:00:00.000Z"); // 11:30 IST: the first free slot at or after 11:00
-    expect(booked!.attendee).toMatchObject({ name: "Priya", email: "priya@example.com", phoneNumber: "+919822000111" });
+    expect(await rememberBookingWish(call.id, entities)).toBe(true);
+    expect((await bookAfterCall(call.id, sat.toJSDate())).state).toBe("skipped"); // not assigned yet
+    expect(bookings).toHaveLength(0);
+
+    await assignCall(call.id, 2, { id: ISHA, how: "front_desk" }, sat.toJSDate());
+    await flush();
+    expect(bookings).toHaveLength(1);
+    expect(bookings[0].designer).toBe("Meera");
+    expect(bookings[0].start).toBe("2026-10-12T06:00:00.000Z"); // 11:30 IST: the first free slot at or after 11:00
+    expect(bookings[0].attendee).toMatchObject({ name: "Priya", email: "priya@example.com", phoneNumber: "+919822000111" });
   });
 
-  it("does nothing without a usable email or time, for a disqualified call, or when a booking exists", async () => {
+  it("moving the call to another designer replaces the booking, so the invite names the new designer", async () => {
     stubCal(["2026-10-12T11:00:00.000+05:30"]);
     const call = await aCall();
-    expect((await bookAfterCall(call.id, { ...entities, customer_email: "not an email" }, sat.toJSDate())).state).toBe("skipped");
-    expect((await bookAfterCall(call.id, { ...entities, preferred_time_24h: null }, sat.toJSDate())).state).toBe("skipped");
-    const bad = await aCall("T03");
-    expect(bad.status).toBe("disqualified");
-    expect((await bookAfterCall(bad.id, entities, sat.toJSDate())).state).toBe("skipped");
-    await db.update(schema.calls).set({ bookingId: "x", bookingStatus: "booked" });
-    expect((await bookAfterCall(call.id, entities, sat.toJSDate())).state).toBe("skipped");
-    expect(booked).toBeNull();
+    await rememberBookingWish(call.id, entities);
+    await assignCall(call.id, 1 + 1, { id: ISHA, how: "front_desk" }, sat.toJSDate()); // Meera
+    await flush();
+    // Cal.com's webhook would link the booking to the call; simulate that link.
+    await db.update(schema.calls).set({ bookingId: "uid-1", bookingStatus: "booked" }).where(eq(schema.calls.id, call.id));
+    await assignCall(call.id, 3, { id: ISHA, how: "front_desk" }, sat.toJSDate()); // Rohan
+    await flush();
+    expect(cancelled).toEqual(["uid-1"]);
+    expect(bookings.map((b) => b.designer)).toEqual(["Meera", "Rohan"]);
   });
 
-  it("reports failure, and never throws, when Cal.com has no slot or refuses", async () => {
+  it("never touches a booking someone else made, and never books twice for the same designer", async () => {
+    stubCal(["2026-10-12T11:00:00.000+05:30"]);
     const call = await aCall();
+    await rememberBookingWish(call.id, entities);
+    await db.update(schema.calls).set({ bookingId: "made-by-hand", bookingStatus: "booked" }).where(eq(schema.calls.id, call.id));
+    await assignCall(call.id, 2, { id: ISHA, how: "front_desk" }, sat.toJSDate());
+    await flush();
+    expect(bookings).toHaveLength(0);
+    expect(cancelled).toHaveLength(0);
+  });
+
+  it("books straight away if the call already has a designer when the details arrive (automatic mode)", async () => {
+    await saveSettings({ assignmentMode: "auto" });
+    stubCal(["2026-10-12T11:00:00.000+05:30"]);
+    const call = await aCall();
+    expect(call.assignedDesignerId).not.toBeNull();
+    await rememberBookingWish(call.id, entities);
+    expect((await bookAfterCall(call.id, sat.toJSDate())).state).toBe("booked");
+    expect(bookings).toHaveLength(1);
+  });
+
+  it("saves nothing without a usable email or time; skips disqualified calls; reports Cal.com failures without throwing", async () => {
+    stubCal(["2026-10-12T11:00:00.000+05:30"]);
+    const call = await aCall();
+    expect(await rememberBookingWish(call.id, { ...entities, customer_email: "not an email" })).toBe(false);
+    expect(await rememberBookingWish(call.id, { ...entities, preferred_time_24h: null })).toBe(false);
+    expect((await callById(call.id)).bookingWish).toBeNull();
+
+    const bad = await aCall("T03");
+    expect(bad.status).toBe("disqualified");
+    await rememberBookingWish(bad.id, entities);
+    await db.update(schema.calls).set({ assignedDesignerId: 2 }).where(eq(schema.calls.id, bad.id));
+    expect((await bookAfterCall(bad.id, sat.toJSDate())).state).toBe("skipped");
+
     stubCal([]);
-    expect((await bookAfterCall(call.id, entities, sat.toJSDate())).state).toBe("failed");
+    await rememberBookingWish(call.id, entities);
+    await db.update(schema.calls).set({ assignedDesignerId: 2 }).where(eq(schema.calls.id, call.id));
+    expect((await bookAfterCall(call.id, sat.toJSDate())).state).toBe("failed");
     stubCal(["2026-10-12T11:00:00.000+05:30"], true);
-    expect(await bookAfterCall(call.id, entities, sat.toJSDate())).toMatchObject({ state: "failed" });
+    expect(await bookAfterCall(call.id, sat.toJSDate())).toMatchObject({ state: "failed" });
   });
 
   it("is off unless Cal.com is live", async () => {
     env.CALCOM_MODE = "mock";
     stubCal(["2026-10-12T11:00:00.000+05:30"]);
     const call = await aCall();
-    expect((await bookAfterCall(call.id, entities, sat.toJSDate())).state).toBe("skipped");
-    expect(booked).toBeNull();
+    await rememberBookingWish(call.id, entities);
+    await db.update(schema.calls).set({ assignedDesignerId: 2 }).where(eq(schema.calls.id, call.id));
+    expect((await bookAfterCall(call.id, sat.toJSDate())).state).toBe("skipped");
+    expect(bookings).toHaveLength(0);
   });
 });
