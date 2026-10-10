@@ -1,0 +1,21 @@
+# Calls the app's background tick every 5 minutes (GitHub's minimum): sends due reminders, scores waiting calls,
+# pulls new calls from Vaani (poll mode) and syncs HubSpot. Vercel's free plan only allows one cron run a day,
+# so this is what keeps the app moving. Needs the repository secret CRON_SECRET and variable APP_URL.
+name: tick
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call the tick
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl --fail --silent --show-error --max-time 120 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$APP_URL/api/cron/tick"
